@@ -33,6 +33,47 @@ import { extractExif } from "../exif.js";
 import { embedText, embedImage } from "../embed.js";
 
 // ---------------------------------------------------------------------------
+// Terminal UI helpers (ported from qmd)
+// ---------------------------------------------------------------------------
+
+const useColor = !process.env.NO_COLOR && process.stdout.isTTY;
+const c = {
+  reset: useColor ? "\x1b[0m" : "",
+  dim: useColor ? "\x1b[2m" : "",
+  bold: useColor ? "\x1b[1m" : "",
+  cyan: useColor ? "\x1b[36m" : "",
+  yellow: useColor ? "\x1b[33m" : "",
+  green: useColor ? "\x1b[32m" : "",
+};
+
+const isTTY = process.stderr.isTTY;
+const cursor = {
+  hide() { if (isTTY) process.stderr.write("\x1b[?25l"); },
+  show() { if (isTTY) process.stderr.write("\x1b[?25h"); },
+};
+process.on("SIGINT", () => { cursor.show(); process.exit(130); });
+process.on("SIGTERM", () => { cursor.show(); process.exit(143); });
+
+// OSC 9;4 taskbar progress (supported by some terminals like WezTerm, Windows Terminal)
+const progress = {
+  set(percent: number) { if (isTTY) process.stderr.write(`\x1b]9;4;1;${Math.round(percent)}\x07`); },
+  clear() { if (isTTY) process.stderr.write(`\x1b]9;4;0\x07`); },
+  indeterminate() { if (isTTY) process.stderr.write(`\x1b]9;4;3\x07`); },
+};
+
+function renderProgressBar(percent: number, width: number = 30): string {
+  const filled = Math.round((percent / 100) * width);
+  return "█".repeat(filled) + "░".repeat(width - filled);
+}
+
+function formatETA(seconds: number): string {
+  if (!isFinite(seconds) || seconds < 0) return "...";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+}
+
+// ---------------------------------------------------------------------------
 // Arg parsing helpers
 // ---------------------------------------------------------------------------
 
@@ -293,25 +334,56 @@ async function cmdEmbed(args: ParsedArgs): Promise<void> {
   const only = flagStr(args.flags.collection);
   const store = new Store();
   try {
-    const rows = store.listImages(only);
-    let done = 0,
-      skipped = 0;
-    for (const row of rows) {
-      if (store.hasVector(row.hash)) {
-        skipped++;
-        continue;
-      }
+    const allRows = store.listImages(only);
+    const pending = allRows.filter((r) => !store.hasVector(r.hash));
+    const skipped = allRows.length - pending.length;
+    const total = pending.length;
+
+    if (total === 0) {
+      console.log(`${c.green}✓ All ${allRows.length} images already have embeddings.${c.reset}`);
+      return;
+    }
+
+    console.log(`${c.dim}Embedding ${total} images (${skipped} already done)${c.reset}`);
+    cursor.hide();
+    progress.indeterminate();
+    const t0 = Date.now();
+    let done = 0;
+    let errors = 0;
+    for (const row of pending) {
       const abs = resolve(getCollection(row.collection)!.path, row.path);
       try {
         const v = await embedImage(abs);
         store.upsertVector(row.hash, v);
         done++;
-        if (done % 10 === 0) console.log(`embedded ${done}...`);
       } catch (e) {
+        errors++;
+        if (isTTY) process.stderr.write("\r\x1b[K");
         console.error(`failed: ${abs}: ${(e as Error).message}`);
       }
+      const completed = done + errors;
+      const percent = (completed / total) * 100;
+      progress.set(percent);
+      const elapsed = (Date.now() - t0) / 1000;
+      const rate = completed / elapsed;
+      const etaSec = rate > 0 ? (total - completed) / rate : 0;
+      const bar = renderProgressBar(percent);
+      const percentStr = percent.toFixed(0).padStart(3);
+      const eta = elapsed > 2 ? formatETA(etaSec) : "...";
+      const errStr = errors > 0 ? ` ${c.yellow}${errors} err${c.reset}` : "";
+      if (isTTY) {
+        process.stderr.write(
+          `\r${c.cyan}${bar}${c.reset} ${c.bold}${percentStr}%${c.reset} ${c.dim}${completed}/${total}${c.reset}${errStr} ${c.dim}${rate.toFixed(1)}/s ETA ${eta}${c.reset}   `,
+        );
+      }
     }
-    console.log(`done: ${done} embedded, ${skipped} already had vectors`);
+    progress.clear();
+    cursor.show();
+    if (isTTY) process.stderr.write("\n");
+    console.log(
+      `${c.green}✓ Done!${c.reset} Embedded ${c.bold}${done}${c.reset} images in ${c.bold}${formatETA((Date.now() - t0) / 1000)}${c.reset}` +
+        (errors > 0 ? ` ${c.yellow}(${errors} failed)${c.reset}` : ""),
+    );
   } finally {
     store.close();
   }

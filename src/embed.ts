@@ -43,7 +43,8 @@ async function getImagePipe(): Promise<any> {
   imagePipePromise = (async () => {
     const tf = await loadTf();
     const processor = await tf.AutoProcessor.from_pretrained(SIGLIP_MODEL_ID);
-    const model = await tf.AutoModel.from_pretrained(SIGLIP_MODEL_ID);
+    const ModelCls = (tf as any).SiglipVisionModel ?? tf.AutoModel;
+    const model = await ModelCls.from_pretrained(SIGLIP_MODEL_ID);
     return { processor, model, tf };
   })();
   return imagePipePromise;
@@ -69,8 +70,15 @@ export async function embedImage(imagePath: string): Promise<Float32Array> {
   const { processor, model, tf } = await getImagePipe();
   const image = await tf.RawImage.read(imagePath);
   const inputs = await processor(image);
-  const { image_embeds } = await model.get_image_features(inputs);
-  return l2normalize(Float32Array.from(image_embeds.data));
+  // Some ONNX exports of SigLIP don't expose get_image_features; fall back to
+  // the model's forward pass, which returns image_embeds in its output.
+  const fn = typeof model.get_image_features === "function"
+    ? (i: any) => model.get_image_features(i)
+    : (i: any) => model({ pixel_values: i.pixel_values });
+  const out = await fn(inputs);
+  const embeds = out.image_embeds ?? out.pooler_output ?? out.last_hidden_state;
+  if (!embeds) throw new Error(`No image embeddings in model output: ${Object.keys(out).join(",")}`);
+  return l2normalize(Float32Array.from(embeds.data));
 }
 
 export function bufferToFloat32(buf: Buffer): Float32Array {
