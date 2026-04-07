@@ -32,7 +32,8 @@ async function getTextPipe(): Promise<any> {
   textPipePromise = (async () => {
     const tf = await loadTf();
     const tokenizer = await tf.AutoTokenizer.from_pretrained(SIGLIP_MODEL_ID);
-    const model = await tf.AutoModel.from_pretrained(SIGLIP_MODEL_ID);
+    const ModelCls = (tf as any).SiglipTextModel ?? tf.AutoModel;
+    const model = await ModelCls.from_pretrained(SIGLIP_MODEL_ID);
     return { tokenizer, model, tf };
   })();
   return textPipePromise;
@@ -62,8 +63,13 @@ function l2normalize(v: Float32Array): Float32Array {
 export async function embedText(text: string): Promise<Float32Array> {
   const { tokenizer, model } = await getTextPipe();
   const inputs = tokenizer(text, { padding: "max_length", truncation: true });
-  const { text_embeds } = await model.get_text_features(inputs);
-  return l2normalize(Float32Array.from(text_embeds.data));
+  const fn = typeof model.get_text_features === "function"
+    ? (i: any) => model.get_text_features(i)
+    : (i: any) => model(i);
+  const out = await fn(inputs);
+  const embeds = out.text_embeds ?? out.pooler_output ?? out.last_hidden_state;
+  if (!embeds) throw new Error(`No text embeddings in model output: ${Object.keys(out).join(",")}`);
+  return l2normalize(Float32Array.from(embeds.data));
 }
 
 export async function embedImage(imagePath: string): Promise<Float32Array> {

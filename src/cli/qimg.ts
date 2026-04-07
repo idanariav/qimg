@@ -134,7 +134,7 @@ function printHits(hits: SearchHit[], asJson: boolean): void {
     return;
   }
   for (const h of hits) {
-    const score = h.score.toFixed(3);
+    const score = h.score.toFixed(4);
     console.log(`${score}\t${h.path}`);
     if (h.caption) console.log(`        ${h.caption}`);
   }
@@ -155,7 +155,7 @@ Commands:
   collection rename <old> <new>
   ls [collection]
   update [--collection <n>]   Scan filesystem, hash, extract EXIF + caption
-  embed [--collection <n>]    Generate SigLIP vectors for indexed images
+  embed [--collection <n>] [--force]  Generate SigLIP vectors (--force re-embeds all)
   get <path|#docid>
   search <query> [--collection <n>] [-n <num>] [--json]
   vsearch <query> [--image <path>] [--collection <n>] [-n <num>] [--json]
@@ -332,10 +332,11 @@ async function cmdUpdate(args: ParsedArgs): Promise<void> {
 
 async function cmdEmbed(args: ParsedArgs): Promise<void> {
   const only = flagStr(args.flags.collection);
+  const force = !!args.flags.force;
   const store = new Store();
   try {
     const allRows = store.listImages(only);
-    const pending = allRows.filter((r) => !store.hasVector(r.hash));
+    const pending = force ? allRows : allRows.filter((r) => !store.hasVector(r.hash));
     const skipped = allRows.length - pending.length;
     const total = pending.length;
 
