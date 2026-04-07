@@ -1,0 +1,51 @@
+{
+  "name": "qimg",
+  "version": "0.1.0",
+  "description": "Query Images - On-device hybrid search for image files with SigLIP 2 vector search and FTS5 caption search",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "qimg": "bin/qimg"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && printf '#!/usr/bin/env node\\n' | cat - dist/cli/qimg.js > dist/cli/qimg.tmp && mv dist/cli/qimg.tmp dist/cli/qimg.js && chmod +x dist/cli/qimg.js",
+    "test": "vitest run --reporter=verbose test/",
+    "qimg": "tsx src/cli/qimg.ts"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.0.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "better-sqlite3": "12.8.0",
+    "exifr": "^7.1.3",
+    "fast-glob": "3.3.3",
+    "gray-matter": "^4.0.3",
+    "sharp": "^0.33.5",
+    "sqlite-vec": "0.1.9",
+    "yaml": "2.8.3",
+    "zod": "4.2.1"
+  },
+  "optionalDependencies": {
+    "sqlite-vec-darwin-arm64": "0.1.9",
+    "sqlite-vec-darwin-x64": "0.1.9",
+    "sqlite-vec-linux-arm64": "0.1.9",
+    "sqlite-vec-linux-x64": "0.1.9"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "^22.0.0",
+    "tsx": "4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "3.2.4"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "license": "MIT"
+}
