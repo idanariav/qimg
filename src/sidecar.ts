@@ -51,11 +51,23 @@ export function resolveSidecar(
 
   const rel = relative(visualsRoot, imagePath);
   const parts = rel.split("/").filter(Boolean);
-  if (parts.length < 2) return null;
+  if (parts.length === 0) return null;
 
-  const subfolder = parts[parts.length - 2]!;
-  const fileName = parts[parts.length - 1]!;
-  const name = basename(fileName, extname(fileName));
+  let subfolder: string;
+  let name: string;
+
+  if (parts.length === 1) {
+    // Image directly in collection root: use the collection root folder name as the subfolder
+    // e.g., visuals_root=/path/Visuals/claims, image=claims/image.png -> notes_root/Claims/image.md
+    const fileName = parts[0]!;
+    name = basename(fileName, extname(fileName));
+    subfolder = basename(visualsRoot); // e.g., "claims"
+  } else {
+    // Image in subfolder: visuals/subfolder/image.png -> content/Subfolder/image.md
+    subfolder = parts[parts.length - 2]!;
+    const fileName = parts[parts.length - 1]!;
+    name = basename(fileName, extname(fileName));
+  }
 
   // Resolve subfolder name in notes_root
   let resolvedSubfolder: string | undefined;

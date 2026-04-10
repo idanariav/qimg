@@ -180,10 +180,9 @@ export class Store {
       .get(id);
     if (!row) return;
     const filename = row.path.split("/").pop() ?? "";
-    this.db.prepare(`DELETE FROM images_fts WHERE rowid = ?`).run(id);
     this.db
       .prepare(
-        `INSERT INTO images_fts (rowid, path, filename, caption, exif_text) VALUES (?, ?, ?, ?, ?)`,
+        `REPLACE INTO images_fts (rowid, path, filename, caption, exif_text) VALUES (?, ?, ?, ?, ?)`,
       )
       .run(id, row.path, filename, row.caption ?? "", row.exif_text ?? "");
   }

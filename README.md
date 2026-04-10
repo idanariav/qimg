@@ -7,36 +7,150 @@ On-device hybrid search for image files. Sibling tool to [qmd](https://github.co
 - **Image→image** similarity search
 - **MCP server** for agent integration
 
+## For Agentic Systems
+
+qimg dramatically improves agent efficiency when searching visual content. Instead of sending images to LLMs for retrieval (expensive in tokens and latency), agents can use local semantic search to find candidate images first, then pass only relevant ones to vision models. This approach:
+
+- **Reduces token consumption** — avoid uploading entire image folders to APIs
+- **Improves accuracy** — combine keyword + semantic search for better recall
+- **Lowers latency** — run queries instantly on-device, no network round-trips
+- **Enables RAG workflows** — build agentic systems that reason over visual libraries at scale
+
 ## Commands
 
+### Collection Management
+
 ```sh
-qimg collection add <path> --name <n>
-qimg collection list / remove / rename
-qimg update                  # scan + hash + EXIF + sidecar captions
-qimg embed                   # generate SigLIP vectors
-qimg get <path|#docid>
-qimg query "sunset over mountains"
-qimg query --image photo.jpg
-qimg search "keyword"
-qimg vsearch "concept"
-qimg status
-qimg mcp [--http] [--port N]
+qimg collection add <path> --name <n> [--mask <glob>] [--sidecar-notes <dir>] [--sidecar-field <name>]
+qimg collection list
+qimg collection remove <name>
+qimg collection rename <oldname> <newname>
 ```
 
-## Sidecar markdown captions
+Create and manage image collections:
 
-For Obsidian-style vaults where each image has a paired markdown note with an `ImageText` YAML frontmatter field, configure a sidecar resolver in `~/.config/qimg/index.yml`:
+```sh
+# Add a collection without sidecar metadata
+qimg collection add ~/photos --name myPhotos
+
+# Add a collection with sidecar captions (paired markdown files)
+qimg collection add ./Scaffolding/Visuals/claims --name claims \
+  --sidecar-notes ./Content \
+  --sidecar-field ImageText
+```
+
+### Indexing
+
+```sh
+qimg update [--collection <name>]              # Scan filesystem, hash files, extract EXIF + sidecar captions
+qimg embed [--collection <name>] [--force]    # Generate SigLIP vector embeddings for all images
+```
+
+### Search
+
+Three search strategies available:
+
+```sh
+qimg search "fishing rod"                      # BM25 keyword search over filenames + captions
+qimg vsearch "person meditating"               # Semantic vector search (text query)
+qimg vsearch --image photo.jpg                 # Image-to-image similarity search
+qimg query "sunset over mountains"             # Hybrid: RRF fusion of keyword + vector search
+```
+
+**Search method comparison:**
+
+- **`search`** — Fast keyword matching on filenames and caption text. Best for exact terms ("fishing rod", "logo", "blue door"). Uses BM25 ranking.
+- **`vsearch`** — Semantic understanding via SigLIP embeddings. Best for concepts and descriptions ("person looking sad", "wooden furniture", "outdoor scene"). Finds images by meaning, not exact words.
+- **`query`** — Best of both worlds. Fuses BM25 and vector results via [Reciprocal Rank Fusion](https://en.wikipedia.org/wiki/Reciprocal_rank_fusion). Use this when you're unsure whether the query is a keyword or a concept.
+
+### Inspection
+
+```sh
+qimg get <path|#docid> [--collection <name>]  # Print full metadata + caption for a single image
+qimg status                                     # Show collection counts and vector coverage
+```
+
+### Server
+
+```sh
+qimg mcp [--http] [--port N]                   # Start MCP server for agent integration
+```
+
+## Sidecar Markdown Captions
+
+For Obsidian-style vaults and knowledge bases, enrich images with human-written captions from paired markdown files. This makes images discoverable through natural language search.
+
+### Configuration
+
+Edit `~/.config/qimg/index.yml` to add sidecar resolvers:
 
 ```yaml
 collections:
-  vault:
-    path: /path/to/vault/Scaffolding/Visuals
+  claims:
+    path: /Users/you/Vault/Scaffolding/Visuals/claims
     pattern: "**/*.{png,jpg,webp}"
     sidecar:
       strategy: parallel-tree
-      notes_root: /path/to/vault/Content
+      notes_root: /Users/you/Vault/Content
       case_insensitive: true
       field: ImageText
 ```
 
-The mapping is: `<visuals_root>/<subfolder>/<name>.png` ↔ `<notes_root>/<Subfolder>/<name>.md` (case-insensitive folder match).
+### Directory Structure & Mapping
+
+The mapping is case-insensitive and supports two patterns:
+
+**Pattern 1: Images in subfolders**
+```
+Scaffolding/Visuals/claims/psychology/motivation.png
+                            ↓ (matches folder name case-insensitively)
+Content/Claims/psychology/motivation.md
+```
+
+**Pattern 2: Images in collection root**
+```
+Scaffolding/Visuals/claims/external-motivation.png
+                     ↓ (collection folder name matches)
+Content/Claims/external-motivation.md
+```
+
+### Setup Example
+
+1. Add a collection with sidecar via CLI:
+
+```sh
+qimg collection add ./Scaffolding/Visuals/claims --name claims \
+  --sidecar-notes ./Content \
+  --sidecar-field ImageText
+```
+
+2. In your markdown files, add captions to the frontmatter:
+
+```markdown
+---
+title: External Motivation Crowds Out Intrinsic Drive
+ImageText: A person looking at a hook at the end of a fishing rod
+---
+
+Research shows...
+```
+
+3. Index and search:
+
+```sh
+qimg update --collection claims
+qimg search "fishing rod"
+```
+
+Output:
+```
+1.0000  external-motivation.png
+        A person looking at a hook at the end of a fishing rod
+```
+
+### Configuration Options
+
+- **`strategy`** — Currently only `parallel-tree` (folder-parallel structure)
+- **`notes_root`** — Path to your markdown documents directory
+- **`case_insensitive`** — If `true`, folder names are matched case-insensitively (recommended)
+- **`field`** — YAML frontmatter field name containing the caption (default: `ImageText`)
