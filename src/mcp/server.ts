@@ -1,7 +1,7 @@
 /**
  * Minimal MCP server for qimg.
  * Tools:
- *   query(query, limit?, collection?, image_path?) → SearchHit[]
+ *   hsearch(query, limit?, collection?, image_path?) → SearchHit[]
  *   get(path) → ImageRow
  *   status() → counts
  */
@@ -33,7 +33,7 @@ export async function startMcp(opts: McpOptions = {}): Promise<void> {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       {
-        name: "query",
+        name: "hsearch",
         description:
           "Hybrid image search (BM25 over captions + SigLIP vector). Pass `image_path` to search by image instead of text.",
         inputSchema: {
@@ -67,7 +67,7 @@ export async function startMcp(opts: McpOptions = {}): Promise<void> {
     const { name, arguments: a } = req.params;
     const args = (a ?? {}) as Record<string, unknown>;
 
-    if (name === "query") {
+    if (name === "hsearch") {
       const limit = typeof args.limit === "number" ? args.limit : 20;
       const collection = typeof args.collection === "string" ? args.collection : undefined;
       const imagePath = typeof args.image_path === "string" ? args.image_path : undefined;

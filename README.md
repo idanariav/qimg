@@ -74,17 +74,17 @@ qimg embed [--collection <name>] [--force]    # Generate SigLIP vector embedding
 Three search strategies available:
 
 ```sh
-qimg search "fishing rod"                      # BM25 keyword search over filenames + captions
+qimg tsearch "fishing rod"                     # BM25 keyword search over filenames + captions
 qimg vsearch "person meditating"               # Semantic vector search (text query)
 qimg vsearch --image photo.jpg                 # Image-to-image similarity search
-qimg query "sunset over mountains"             # Hybrid: RRF fusion of keyword + vector search
+qimg hsearch "sunset over mountains"           # Hybrid: RRF fusion of keyword + vector search
 ```
 
 **Search method comparison:**
 
-- **`search`** — Fast keyword matching on filenames and caption text. Best for exact terms ("fishing rod", "logo", "blue door"). Uses BM25 ranking.
+- **`tsearch`** — Fast keyword matching on filenames and caption text. Best for exact terms ("fishing rod", "logo", "blue door"). Uses BM25 ranking.
 - **`vsearch`** — Semantic understanding via SigLIP embeddings. Best for concepts and descriptions ("person looking sad", "wooden furniture", "outdoor scene"). Finds images by meaning, not exact words.
-- **`query`** — Best of both worlds. Fuses BM25 and vector results via [Reciprocal Rank Fusion](https://en.wikipedia.org/wiki/Reciprocal_rank_fusion). Use this when you're unsure whether the query is a keyword or a concept.
+- **`hsearch`** — Best of both worlds. Fuses BM25 and vector results via [Reciprocal Rank Fusion](https://en.wikipedia.org/wiki/Reciprocal_rank_fusion). Use this when you're unsure whether the query is a keyword or a concept.
 
 ### Inspection
 
@@ -162,7 +162,7 @@ Research shows...
 
 ```sh
 qimg update --collection claims
-qimg search "fishing rod"
+qimg tsearch "fishing rod"
 ```
 
 Output:
@@ -215,7 +215,7 @@ Search my design assets for "mobile ui components" and show me the top 3 matches
 ```
 
 The agent will:
-1. Use `qimg query` to search image captions and vectors
+1. Use `qimg hsearch` to search image captions and vectors
 2. Retrieve matching images from your collections
 3. Fetch metadata and display results
 4. Use image paths for further processing or analysis

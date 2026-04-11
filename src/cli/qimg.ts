@@ -7,9 +7,9 @@
  *   update        - scan filesystem, hash files, extract EXIF + sidecar caption
  *   embed         - generate SigLIP vectors for images that don't have one
  *   get           - print metadata + caption for a single image
- *   search        - BM25 over filename + caption + exif_text
+ *   tsearch       - BM25 over filename + caption + exif_text (text-only)
  *   vsearch       - vector cosine similarity (text or --image)
- *   query         - hybrid (RRF fusion of fts + vec)
+ *   hsearch       - hybrid (RRF fusion of fts + vec)
  *   status        - index counts
  *   mcp           - start MCP server
  */
@@ -157,9 +157,9 @@ Commands:
   update [--collection <n>]   Scan filesystem, hash, extract EXIF + caption
   embed [--collection <n>] [--force]  Generate SigLIP vectors (--force re-embeds all)
   get <path|#docid>
-  search <query> [--collection <n>] [-n <num>] [--json]
+  tsearch <query> [--collection <n>] [-n <num>] [--json]
   vsearch <query> [--image <path>] [--collection <n>] [-n <num>] [--json]
-  query <query> [--image <path>] [--collection <n>] [-n <num>] [--json]
+  hsearch <query> [--image <path>] [--collection <n>] [-n <num>] [--json]
   status
   mcp [--http] [--port <n>]
 
@@ -416,7 +416,7 @@ function cmdGet(args: ParsedArgs): void {
 async function cmdSearch(args: ParsedArgs): Promise<void> {
   const query = args.positional.join(" ");
   if (!query) {
-    console.error("usage: qimg search <query>");
+    console.error("usage: qimg tsearch <query>");
     process.exit(2);
   }
   const store = new Store();
@@ -470,7 +470,7 @@ async function cmdQuery(args: ParsedArgs): Promise<void> {
       vecHits = store.searchVec(v, limit * 2, collection);
     } else {
       if (!query) {
-        console.error("usage: qimg query <query> | --image <path>");
+        console.error("usage: qimg hsearch <query> | --image <path>");
         process.exit(2);
       }
       ftsHits = store.searchFts(query, limit * 2, collection);
@@ -539,13 +539,13 @@ async function main(): Promise<void> {
     case "get":
       cmdGet(args);
       break;
-    case "search":
+    case "tsearch":
       await cmdSearch(args);
       break;
     case "vsearch":
       await cmdVsearch(args);
       break;
-    case "query":
+    case "hsearch":
       await cmdQuery(args);
       break;
     case "status":
