@@ -17,10 +17,7 @@ import type { SearchHit } from "../store.js";
 import { embedText, embedImage } from "../embed.js";
 import { resolve } from "path";
 
-export interface McpOptions {
-  http?: boolean;
-  port?: number;
-}
+export interface McpOptions {}
 
 export async function startMcp(opts: McpOptions = {}): Promise<void> {
   const server = new Server(
@@ -35,14 +32,14 @@ export async function startMcp(opts: McpOptions = {}): Promise<void> {
       {
         name: "hsearch",
         description:
-          "Hybrid image search (BM25 over captions + SigLIP vector). Pass `image_path` to search by image instead of text.",
+          "Hybrid image search (BM25 over captions + SigLIP vector). Provide `query` for text search or `image_path` for image-similarity search.",
         inputSchema: {
           type: "object",
           properties: {
-            query: { type: "string", description: "Text query" },
-            image_path: { type: "string", description: "Optional image path for image→image search" },
-            limit: { type: "number", default: 20 },
-            collection: { type: "string" },
+            query: { type: "string", description: "Text query for semantic + keyword search" },
+            image_path: { type: "string", description: "Absolute path to an image for image-similarity search (mutually exclusive with query)" },
+            limit: { type: "number", description: "Maximum number of results to return (default: 20)" },
+            collection: { type: "string", description: "Restrict search to a specific collection name" },
           },
         },
       },
@@ -103,9 +100,6 @@ export async function startMcp(opts: McpOptions = {}): Promise<void> {
     return { content: [{ type: "text", text: `unknown tool: ${name}` }], isError: true };
   });
 
-  if (opts.http) {
-    console.error(`HTTP transport not implemented in v0.1; falling back to stdio`);
-  }
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

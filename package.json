@@ -12,8 +12,33 @@
     "bin/",
     "dist/",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
+  "author": "Idan Ariav",
+  "keywords": [
+    "image",
+    "search",
+    "vector",
+    "siglip",
+    "mcp",
+    "embeddings",
+    "semantic-search",
+    "hybrid-search",
+    "rag",
+    "obsidian"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idanariav/qimg.git"
+  },
+  "homepage": "https://github.com/idanariav/qimg#readme",
+  "bugs": {
+    "url": "https://github.com/idanariav/qimg/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && printf '#!/usr/bin/env node\\n' | cat - dist/cli/qimg.js > dist/cli/qimg.tmp && mv dist/cli/qimg.tmp dist/cli/qimg.js && chmod +x dist/cli/qimg.js",
     "test": "vitest run --reporter=verbose test/",
@@ -35,7 +60,8 @@
     "sqlite-vec-darwin-arm64": "0.1.9",
     "sqlite-vec-darwin-x64": "0.1.9",
     "sqlite-vec-linux-arm64": "0.1.9",
-    "sqlite-vec-linux-x64": "0.1.9"
+    "sqlite-vec-linux-x64": "0.1.9",
+    "sqlite-vec-windows-x64": "0.1.9"
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.13",

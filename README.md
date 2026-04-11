@@ -96,7 +96,7 @@ qimg status                                     # Show collection counts and vec
 ### Server
 
 ```sh
-qimg mcp [--http] [--port N]                   # Start MCP server for agent integration
+qimg mcp                                        # Start MCP server for agent integration (stdio)
 ```
 
 ## Sidecar Markdown Captions
@@ -225,10 +225,7 @@ The agent will:
 For debugging or custom integrations, start the server directly:
 
 ```sh
-qimg mcp                           # Start on stdio (default for Claude Code)
-qimg mcp --http --port 3001       # HTTP server on port 3001
+qimg mcp
 ```
 
-**Stdio mode (default):** Ideal for Claude Code and other MCP clients that use stdio transport.
-
-**HTTP mode:** Useful for debugging, testing, or integrating with HTTP-based clients.
+qimg uses stdio transport, which is compatible with Claude Code and all standard MCP clients.

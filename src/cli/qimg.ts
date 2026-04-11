@@ -161,7 +161,7 @@ Commands:
   vsearch <query> [--image <path>] [--collection <n>] [-n <num>] [--json]
   hsearch <query> [--image <path>] [--collection <n>] [-n <num>] [--json]
   status
-  mcp [--http] [--port <n>]
+  mcp
 
 Config: ${getConfigPath()}
 `);
@@ -502,12 +502,9 @@ function cmdStatus(): void {
   }
 }
 
-async function cmdMcp(args: ParsedArgs): Promise<void> {
+async function cmdMcp(_args: ParsedArgs): Promise<void> {
   const { startMcp } = await import("../mcp/server.js");
-  await startMcp({
-    http: !!args.flags.http,
-    port: flagNum(args.flags.port, 8181),
-  });
+  await startMcp();
 }
 
 // ---------------------------------------------------------------------------
