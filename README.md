@@ -7,6 +7,29 @@ On-device hybrid search for image files. Sibling tool to [qmd](https://github.co
 - **Image→image** similarity search
 - **MCP server** for agent integration
 
+## Installation
+
+### From npm
+
+```sh
+npm install -g qimg
+```
+
+### From source
+
+```sh
+git clone https://github.com/idanariav/qimg.git
+cd qimg
+npm install
+npm run build
+npm link
+```
+
+### Requirements
+
+- Node.js ≥ 22.0.0
+- ~200MB disk space for SigLIP model (downloaded on first use)
+
 ## For Agentic Systems
 
 qimg dramatically improves agent efficiency when searching visual content. Instead of sending images to LLMs for retrieval (expensive in tokens and latency), agents can use local semantic search to find candidate images first, then pass only relevant ones to vision models. This approach:
@@ -154,3 +177,58 @@ Output:
 - **`notes_root`** — Path to your markdown documents directory
 - **`case_insensitive`** — If `true`, folder names are matched case-insensitively (recommended)
 - **`field`** — YAML frontmatter field name containing the caption (default: `ImageText`)
+
+## Claude Code MCP Integration
+
+Run qimg as a Model Context Protocol server and integrate it with Claude Code for seamless agent-based image search.
+
+### Setup
+
+1. **Install qimg** (if not already installed):
+
+```sh
+npm install -g qimg
+```
+
+2. **Register qimg with Claude Code:**
+
+Use Claude Code's native `/mcp` command to register the server:
+
+```
+/mcp add qimg "qimg mcp"
+```
+
+3. **Verify the connection:**
+
+```
+/mcp list
+```
+
+You should see `qimg` in the list of active MCP servers. Claude Code will now have access to image search capabilities.
+
+### Using qimg in Claude Code Agents
+
+Once registered, agents can query images directly in prompts:
+
+```
+Search my design assets for "mobile ui components" and show me the top 3 matches.
+```
+
+The agent will:
+1. Use `qimg query` to search image captions and vectors
+2. Retrieve matching images from your collections
+3. Fetch metadata and display results
+4. Use image paths for further processing or analysis
+
+### Running the MCP Server Standalone
+
+For debugging or custom integrations, start the server directly:
+
+```sh
+qimg mcp                           # Start on stdio (default for Claude Code)
+qimg mcp --http --port 3001       # HTTP server on port 3001
+```
+
+**Stdio mode (default):** Ideal for Claude Code and other MCP clients that use stdio transport.
+
+**HTTP mode:** Useful for debugging, testing, or integrating with HTTP-based clients.
