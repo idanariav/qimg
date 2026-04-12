@@ -12,7 +12,7 @@ On-device hybrid search for image files. Sibling tool to [qmd](https://github.co
 ### From npm
 
 ```sh
-npm install -g qimg
+npm install -g @idan_ariav/qimg
 ```
 
 ### From source
@@ -187,7 +187,7 @@ Run qimg as a Model Context Protocol server and integrate it with Claude Code fo
 1. **Install qimg** (if not already installed):
 
 ```sh
-npm install -g qimg
+npm install -g @idan_ariav/qimg
 ```
 
 2. **Register qimg with Claude Code** — Install the plugin (recommended):
