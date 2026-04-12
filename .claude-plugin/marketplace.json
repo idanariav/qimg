@@ -1,0 +1,14 @@
+{
+  "name": "qimg",
+  "plugins": [
+    {
+      "name": "qimg",
+      "version": "0.1.0",
+      "description": "On-device hybrid image search with SigLIP 2 vector search, BM25 caption search, and MCP integration",
+      "source": {
+        "source": "git",
+        "url": "https://github.com/idanariav/qimg.git"
+      }
+    }
+  ]
+}

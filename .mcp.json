@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "qimg": {
+      "command": "qimg",
+      "args": ["mcp"]
+    }
+  }
+}

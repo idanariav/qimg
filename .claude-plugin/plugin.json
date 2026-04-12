@@ -1,0 +1,14 @@
+{
+  "name": "qimg",
+  "version": "0.1.0",
+  "description": "On-device hybrid image search with SigLIP 2 vector search, BM25 caption search, and MCP integration",
+  "author": {
+    "name": "Idan Ariav",
+    "url": "https://github.com/idanariav"
+  },
+  "homepage": "https://github.com/idanariav/qimg#readme",
+  "repository": "https://github.com/idanariav/qimg",
+  "license": "MIT",
+  "keywords": ["image", "search", "vector", "siglip", "mcp", "embeddings", "semantic-search", "hybrid-search"],
+  "mcpServers": "./.mcp.json"
+}

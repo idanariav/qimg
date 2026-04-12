@@ -190,12 +190,24 @@ Run qimg as a Model Context Protocol server and integrate it with Claude Code fo
 npm install -g qimg
 ```
 
-2. **Register qimg with Claude Code:**
+2. **Register qimg with Claude Code** — Install the plugin (recommended):
 
-Use Claude Code's native `/mcp` command to register the server:
-
+```bash
+claude plugin marketplace add idan/qimg
+claude plugin install qimg@qimg
 ```
-/mcp add qimg "qimg mcp"
+
+Or configure MCP manually in `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "qimg": {
+      "command": "qimg",
+      "args": ["mcp"]
+    }
+  }
+}
 ```
 
 3. **Verify the connection:**
