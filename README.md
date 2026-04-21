@@ -188,11 +188,11 @@ Run qimg as a Model Context Protocol server to enable Claude Code agents to sear
 # Install from npm (if not already installed)
 npm install -g @idan_ariav/qimg
 
-# Add qimg to Claude Code via plugin marketplace (one command)
-claude plugin marketplace add idanariav/qimg
+# Add the pkm-query-tools marketplace (one command)
+claude plugin marketplace add idanariav/pkm-query-tools
 
 # Install the plugin
-claude plugin install qimg@qimg
+claude plugin install qimg@pkm-query-tools
 
 # Verify it's connected
 /mcp list
