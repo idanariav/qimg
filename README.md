@@ -180,24 +180,29 @@ Output:
 
 ## Claude Code MCP Integration
 
-Run qimg as a Model Context Protocol server and integrate it with Claude Code for seamless agent-based image search.
+Run qimg as a Model Context Protocol server to enable Claude Code agents to search your images.
 
-### Setup
-
-1. **Install qimg** (if not already installed):
-
-```sh
-npm install -g @idan_ariav/qimg
-```
-
-2. **Register qimg with Claude Code** — Install the plugin (recommended):
+### Quick Start
 
 ```bash
-claude plugin marketplace add idan/qimg
+# Install from npm (if not already installed)
+npm install -g @idan_ariav/qimg
+
+# Add qimg to Claude Code via plugin marketplace (one command)
+claude plugin marketplace add idanariav/qimg
+
+# Install the plugin
 claude plugin install qimg@qimg
+
+# Verify it's connected
+/mcp list
 ```
 
-Or configure MCP manually in `~/.claude/settings.json`:
+You should see `qimg` in the list of active MCP servers.
+
+### Manual Setup (if marketplace doesn't work)
+
+If the marketplace approach has issues, configure directly in `~/.claude/settings.json`:
 
 ```json
 {
@@ -210,13 +215,7 @@ Or configure MCP manually in `~/.claude/settings.json`:
 }
 ```
 
-3. **Verify the connection:**
-
-```
-/mcp list
-```
-
-You should see `qimg` in the list of active MCP servers. Claude Code will now have access to image search capabilities.
+Then verify with `/mcp list`.
 
 ### Using qimg in Claude Code Agents
 
