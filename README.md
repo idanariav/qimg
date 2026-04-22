@@ -1,208 +1,243 @@
 # qimg — Query Images
 
-On-device hybrid search for image files. Sibling tool to [qmd](https://github.com/tobi/qmd) but for images instead of markdown.
+On-device hybrid search for your image library. Find images by meaning, description, or visual similarity — entirely offline, no cloud required.
 
-- **Vector search** via [SigLIP 2](https://huggingface.co/docs/transformers/model_doc/siglip2) (text↔image, runs locally via transformers.js / ONNX)
-- **BM25 keyword search** over filenames + sidecar markdown captions (`ImageText` frontmatter)
-- **Image→image** similarity search
-- **MCP server** for agent integration
+---
 
-## Installation
+## Quick Start
 
-### From npm
+### Install
+
+**From npm:**
 
 ```sh
 npm install -g @idan_ariav/qimg
 ```
 
-### From source
+**From the Claude Code marketplace:**
 
 ```sh
-git clone https://github.com/idanariav/qimg.git
-cd qimg
-npm install
-npm run build
-npm link
+claude plugin marketplace add idanariav/pkm-query-tools
+claude plugin install qimg@pkm-query-tools
 ```
 
-### Requirements
+**Requirements:** Node.js ≥ 22.0.0, ~200MB disk space for the SigLIP model (downloaded on first use).
 
-- Node.js ≥ 22.0.0
-- ~200MB disk space for SigLIP model (downloaded on first use)
+### Get Running in 3 Steps
 
-## For Agentic Systems
+```sh
+# 1. Register a folder as a collection
+qimg collection add ~/photos --name photos
 
-qimg dramatically improves agent efficiency when searching visual content. Instead of sending images to LLMs for retrieval (expensive in tokens and latency), agents can use local semantic search to find candidate images first, then pass only relevant ones to vision models. This approach:
+# 2. Scan and index your images
+qimg update --collection photos
 
-- **Reduces token consumption** — avoid uploading entire image folders to APIs
-- **Improves accuracy** — combine keyword + semantic search for better recall
-- **Lowers latency** — run queries instantly on-device, no network round-trips
-- **Enables RAG workflows** — build agentic systems that reason over visual libraries at scale
+# 3. Generate semantic embeddings
+qimg embed --collection photos
+```
+
+### Popular Commands
+
+```sh
+# Hybrid search (recommended — combines keyword + semantic)
+qimg hsearch "person looking contemplative"
+
+# Keyword search — exact terms in filenames or captions
+qimg tsearch "fishing rod"
+
+# Semantic search — find by meaning and visual concepts
+qimg vsearch "warm cozy interior"
+
+# Image-to-image similarity
+qimg vsearch --image ./reference.jpg
+
+# Inspect a specific image
+qimg get photos/portrait.jpg
+
+# Check index health
+qimg status
+```
+
+---
+
+## Use Cases
+
+qimg is designed for knowledge workers and researchers who maintain large visual libraries and need to find images through natural language rather than filenames or manual tags.
+
+**Find images you remember but can't locate**
+> "I had a diagram about motivation and reward loops — search for it without remembering the filename."
+```sh
+qimg hsearch "motivation reward loop diagram"
+```
+
+**Retrieve visual evidence for a claim or idea**
+> "I need an image showing social proof or conformity for a presentation."
+```sh
+qimg vsearch "people following crowd behavior"
+```
+
+**Match images to notes in a knowledge base**
+> Images paired with Obsidian notes are indexed with their captions, making them discoverable through the concepts in your writing.
+```sh
+qimg tsearch "external motivation"
+```
+
+**Find visually similar photos**
+> "Show me images similar to this reference shot."
+```sh
+qimg vsearch --image ./reference-shot.jpg
+```
+
+**Agent-assisted image retrieval**
+> Claude Code agents can call qimg via MCP to search your image library before deciding which images to actually read — avoiding unnecessary token usage from uploading whole folders to a vision model.
+
+---
 
 ## Commands
 
 ### Collection Management
 
+Collections are registered folders qimg knows how to index and search.
+
 ```sh
-qimg collection add <path> --name <n> [--mask <glob>] [--sidecar-notes <dir>] [--sidecar-field <name>]
+qimg collection add <path> --name <name> [--mask <glob>] [--sidecar-notes <dir>] [--sidecar-field <field>]
 qimg collection list
 qimg collection remove <name>
-qimg collection rename <oldname> <newname>
+qimg collection rename <old> <new>
 ```
 
-Create and manage image collections:
+| Flag | Description |
+|---|---|
+| `--name` | Name for the collection (required) |
+| `--mask` | Glob pattern for which files to index (default: `**/*.{png,jpg,jpeg,webp,heic,gif}`) |
+| `--sidecar-notes` | Root directory of paired markdown files containing image captions |
+| `--sidecar-field` | Frontmatter field in markdown files that holds the caption (default: `ImageText`) |
+
+**Examples:**
 
 ```sh
-# Add a collection without sidecar metadata
-qimg collection add ~/photos --name myPhotos
+# Basic photo folder
+qimg collection add ~/photos --name photos
 
-# Add a collection with sidecar captions (paired markdown files)
+# Obsidian vault images with paired markdown captions
 qimg collection add ./Scaffolding/Visuals/claims --name claims \
   --sidecar-notes ./Content \
   --sidecar-field ImageText
+
+# Only index PNGs in a specific subfolder
+qimg collection add ~/diagrams --name diagrams --mask "**/*.png"
 ```
+
+---
 
 ### Indexing
 
+Two-step process: first scan files and extract metadata, then generate semantic embeddings.
+
 ```sh
-qimg update [--collection <name>]              # Scan filesystem, hash files, extract EXIF + sidecar captions
-qimg embed [--collection <name>] [--force]    # Generate SigLIP vector embeddings for all images
+qimg update [--collection <name>]
+qimg embed  [--collection <name>] [--force]
 ```
+
+**`update`** — Walks the collection directory, hashes files, extracts EXIF metadata (camera, GPS, timestamp), and reads sidecar captions. Skips files that haven't changed since the last run.
+
+**`embed`** — Generates SigLIP 2 vector embeddings for each image. Only processes images that don't already have a vector unless `--force` is passed. Shows a live progress bar with ETA.
+
+```sh
+# Update and embed everything
+qimg update && qimg embed
+
+# Re-embed a specific collection from scratch
+qimg embed --collection photos --force
+```
+
+---
 
 ### Search
 
-Three search strategies available:
+Three search strategies, each with different strengths:
 
 ```sh
-qimg tsearch "fishing rod"                     # BM25 keyword search over filenames + captions
-qimg vsearch "person meditating"               # Semantic vector search (text query)
-qimg vsearch --image photo.jpg                 # Image-to-image similarity search
-qimg hsearch "sunset over mountains"           # Hybrid: RRF fusion of keyword + vector search
+qimg tsearch <query> [--collection <name>] [-n <num>] [--json]
+qimg vsearch <query> [--image <path>] [--collection <name>] [-n <num>] [--json]
+qimg hsearch <query> [--image <path>] [--collection <name>] [-n <num>] [--json]
 ```
 
-**Search method comparison:**
+| Flag | Description |
+|---|---|
+| `--collection` | Limit search to a single collection |
+| `-n` | Number of results to return (default: 20) |
+| `--json` | Output results as JSON |
+| `--image` | Use an image file as the query instead of text (vsearch / hsearch only) |
 
-- **`tsearch`** — Fast keyword matching on filenames and caption text. Best for exact terms ("fishing rod", "logo", "blue door"). Uses BM25 ranking.
-- **`vsearch`** — Semantic understanding via SigLIP embeddings. Best for concepts and descriptions ("person looking sad", "wooden furniture", "outdoor scene"). Finds images by meaning, not exact words.
-- **`hsearch`** — Best of both worlds. Fuses BM25 and vector results via [Reciprocal Rank Fusion](https://en.wikipedia.org/wiki/Reciprocal_rank_fusion). Use this when you're unsure whether the query is a keyword or a concept.
+**`tsearch` — Keyword Search**
+
+BM25 full-text search over filenames, EXIF text, and sidecar captions. Fast and exact — best when you know specific words that appear in a filename or caption.
+
+```sh
+qimg tsearch "fishing rod"
+qimg tsearch "Nikon D800" --collection photos
+```
+
+**`vsearch` — Semantic Search**
+
+Encodes your query with SigLIP and finds images by vector cosine similarity. Understands meaning and visual concepts, not just exact words. Also supports image-to-image queries.
+
+```sh
+qimg vsearch "person looking reflective near water"
+qimg vsearch --image ./mood-board.jpg --collection design -n 5
+```
+
+**`hsearch` — Hybrid Search**
+
+Fuses BM25 and vector results using Reciprocal Rank Fusion (RRF). Best default choice when you're not sure whether your query is a keyword or a concept.
+
+```sh
+qimg hsearch "external motivation diagram"
+qimg hsearch "warm light interior" -n 10 --json
+```
+
+---
 
 ### Inspection
 
 ```sh
-qimg get <path|#docid> [--collection <name>]  # Print full metadata + caption for a single image
-qimg status                                     # Show collection counts and vector coverage
+qimg get <path|#docid> [--collection <name>]
+qimg ls [<collection>]
+qimg status
 ```
 
-### Server
+**`get`** — Prints full metadata for a single image as JSON: path, caption, EXIF fields (camera, GPS, timestamp), dimensions, and vector coverage.
 
 ```sh
-qimg mcp                                        # Start MCP server for agent integration (stdio)
+qimg get photos/portrait.jpg
+qimg get claims/external-motivation.png
 ```
 
-## Sidecar Markdown Captions
-
-For Obsidian-style vaults and knowledge bases, enrich images with human-written captions from paired markdown files. This makes images discoverable through natural language search.
-
-### Configuration
-
-Edit `~/.config/qimg/index.yml` to add sidecar resolvers:
-
-```yaml
-collections:
-  claims:
-    path: /Users/you/Vault/Scaffolding/Visuals/claims
-    pattern: "**/*.{png,jpg,webp}"
-    sidecar:
-      strategy: parallel-tree
-      notes_root: /Users/you/Vault/Content
-      case_insensitive: true
-      field: ImageText
-```
-
-### Directory Structure & Mapping
-
-The mapping is case-insensitive and supports two patterns:
-
-**Pattern 1: Images in subfolders**
-```
-Scaffolding/Visuals/claims/psychology/motivation.png
-                            ↓ (matches folder name case-insensitively)
-Content/Claims/psychology/motivation.md
-```
-
-**Pattern 2: Images in collection root**
-```
-Scaffolding/Visuals/claims/external-motivation.png
-                     ↓ (collection folder name matches)
-Content/Claims/external-motivation.md
-```
-
-### Setup Example
-
-1. Add a collection with sidecar via CLI:
+**`ls`** — Lists all indexed images. Optionally filter to one collection.
 
 ```sh
-qimg collection add ./Scaffolding/Visuals/claims --name claims \
-  --sidecar-notes ./Content \
-  --sidecar-field ImageText
+qimg ls
+qimg ls claims
 ```
 
-2. In your markdown files, add captions to the frontmatter:
+**`status`** — Shows index health: number of collections, images, and how many have embeddings.
 
-```markdown
----
-title: External Motivation Crowds Out Intrinsic Drive
-ImageText: A person looking at a hook at the end of a fishing rod
+```sh
+qimg status
+```
+
 ---
 
-Research shows...
-```
+### MCP Server
 
-3. Index and search:
+Starts qimg as a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio, making it accessible to Claude Code and other MCP-compatible agents.
 
 ```sh
-qimg update --collection claims
-qimg tsearch "fishing rod"
+qimg mcp
 ```
 
-Output:
-```
-1.0000  external-motivation.png
-        A person looking at a hook at the end of a fishing rod
-```
-
-### Configuration Options
-
-- **`strategy`** — Currently only `parallel-tree` (folder-parallel structure)
-- **`notes_root`** — Path to your markdown documents directory
-- **`case_insensitive`** — If `true`, folder names are matched case-insensitively (recommended)
-- **`field`** — YAML frontmatter field name containing the caption (default: `ImageText`)
-
-## Claude Code MCP Integration
-
-Run qimg as a Model Context Protocol server to enable Claude Code agents to search your images.
-
-### Quick Start
-
-```bash
-# Install from npm (if not already installed)
-npm install -g @idan_ariav/qimg
-
-# Add the pkm-query-tools marketplace (one command)
-claude plugin marketplace add idanariav/pkm-query-tools
-
-# Install the plugin
-claude plugin install qimg@pkm-query-tools
-
-# Verify it's connected
-/mcp list
-```
-
-You should see `qimg` in the list of active MCP servers.
-
-### Manual Setup (if marketplace doesn't work)
-
-If the marketplace approach has issues, configure directly in `~/.claude/settings.json`:
+Once registered, agents can search your images directly in conversation. Configure in `~/.claude/settings.json`:
 
 ```json
 {
@@ -215,28 +250,92 @@ If the marketplace approach has issues, configure directly in `~/.claude/setting
 }
 ```
 
-Then verify with `/mcp list`.
+Verify with `/mcp list` inside Claude Code.
 
-### Using qimg in Claude Code Agents
+---
 
-Once registered, agents can query images directly in prompts:
+### Sidecar Captions
+
+For knowledge bases with images stored separately from their markdown notes, qimg supports a **parallel-tree sidecar** strategy: images and markdown files share the same folder structure under different roots.
+
+**Example structure:**
 
 ```
-Search my design assets for "mobile ui components" and show me the top 3 matches.
+Scaffolding/Visuals/claims/psychology/motivation.png
+                                         ↕ matched by folder path
+Content/Claims/psychology/motivation.md  ← caption read from ImageText field
 ```
 
-The agent will:
-1. Use `qimg hsearch` to search image captions and vectors
-2. Retrieve matching images from your collections
-3. Fetch metadata and display results
-4. Use image paths for further processing or analysis
+**Markdown frontmatter:**
 
-### Running the MCP Server Standalone
+```markdown
+---
+title: External Motivation Crowds Out Intrinsic Drive
+ImageText: A person looking at a hook dangling from a fishing rod
+---
+```
 
-For debugging or custom integrations, start the server directly:
+After running `qimg update`, the caption is indexed and the image becomes searchable:
 
 ```sh
-qimg mcp
+qimg tsearch "fishing rod"
+# → 1.0000  psychology/motivation.png
+#           A person looking at a hook dangling from a fishing rod
 ```
 
-qimg uses stdio transport, which is compatible with Claude Code and all standard MCP clients.
+---
+
+## Methodology
+
+qimg combines three techniques to make images findable through natural language:
+
+**1. SigLIP 2 Embeddings (Semantic Search)**
+
+[SigLIP 2](https://huggingface.co/docs/transformers/model_doc/siglip2) is a vision-language model trained to embed images and text into the same vector space. A text query like "cozy reading nook" and an image of a person reading by a lamp will land near each other in this space — even if none of those words appear in the filename.
+
+Embeddings run locally via [transformers.js](https://huggingface.co/docs/transformers.js) and ONNX Runtime. The model is downloaded once (~200MB) and cached. No image or query ever leaves your device.
+
+**2. BM25 Full-Text Search (Keyword Search)**
+
+Filenames, EXIF metadata, and sidecar captions are indexed in an [FTS5](https://www.sqlite.org/fts5.html) table inside a local SQLite database. BM25 ranking gives higher scores to images where query terms appear more specifically. This is fast, deterministic, and works offline without any model.
+
+**3. Reciprocal Rank Fusion (Hybrid Search)**
+
+`hsearch` runs both BM25 and vector search in parallel, then merges the ranked result lists using [Reciprocal Rank Fusion](https://en.wikipedia.org/wiki/Reciprocal_rank_fusion). RRF weights items by their position in each ranked list rather than their raw scores, which avoids the score-scale mismatch between BM25 and cosine similarity. The result is more robust than either method alone.
+
+**4. Sidecar Captions**
+
+For knowledge bases where images live in a separate folder tree from their markdown notes, qimg resolves captions by mirroring the directory structure. This lets human-written descriptions (stored as frontmatter in markdown) enrich the search index without modifying the image files themselves.
+
+**Storage:** All data is stored in a single SQLite file at `~/.cache/qimg/index.sqlite`. Collection config lives at `~/.config/qimg/index.yml`. Both paths are overridable via `QIMG_CACHE_DIR` and `QIMG_CONFIG_DIR`.
+
+---
+
+## Privacy and Security
+
+qimg is fully local. Nothing leaves your machine.
+
+- **No cloud calls** — Embeddings are generated on-device using ONNX Runtime. There are no API keys, no telemetry, and no network requests during search or indexing.
+- **No image uploads** — Images are read from disk, hashed, and embedded locally. The hash and vector are stored in a local SQLite database; the image bytes are never transmitted anywhere.
+- **Model downloaded once** — The SigLIP 2 ONNX model is fetched from Hugging Face on first use and cached locally. After that, the tool runs entirely offline.
+- **You own your index** — The SQLite database and config files are plain files in standard XDG directories (`~/.cache/qimg/`, `~/.config/qimg/`). You can inspect, copy, or delete them at any time.
+
+---
+
+## Other Plugins
+
+qimg is part of the **pkm-query-tools** family — a suite of local-first search tools for personal knowledge management:
+
+| Plugin | What it searches |
+|---|---|
+| **qimg** | Image libraries (keyword + semantic + image-to-image) |
+| [qnode](https://github.com/idanariav/qnode) | Graph traversal over note networks (neighbors, paths, distance) |
+| [qvoid](https://github.com/idanariav/qvoid) | Semantic clustering and similarity across your vault |
+
+Install all of them at once:
+
+```sh
+claude plugin marketplace add idanariav/pkm-query-tools
+claude plugin install qnode@pkm-query-tools
+claude plugin install qvoid@pkm-query-tools
+```
