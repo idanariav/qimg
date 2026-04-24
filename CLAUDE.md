@@ -7,8 +7,9 @@ qimg collection add <path> --name <n> [--mask <glob>] [--sidecar-notes <dir>] [-
 qimg collection list
 qimg collection remove <name>
 qimg collection rename <old> <new>
-qimg update [--collection <n>]           # Scan filesystem, hash files, extract EXIF + sidecar captions
+qimg index [--collection <n>]           # Scan filesystem, hash files, extract EXIF + sidecar captions
 qimg embed [--collection <n>] [--force]  # Generate SigLIP vector embeddings
+qimg caption [--collection <n>] [--force]  # Generate AI captions for un-captioned images
 qimg tsearch <query> [--collection <n>] [-n <num>] [--json]
 qimg vsearch <query> [--image <path>] [--collection <n>] [-n <num>] [--json]
 qimg hsearch <query> [--image <path>] [--collection <n>] [-n <num>] [--json]
@@ -39,6 +40,7 @@ src/
   mcp/server.ts     # MCP server (exposes hsearch, get, status tools)
   store.ts          # SQLite store: FTS5 + sqlite-vec, collection management
   embed.ts          # SigLIP 2 text and image embeddings via transformers.js
+  caption.ts        # BLIP image captioning via transformers.js
   sidecar.ts        # Parallel-tree sidecar resolver for paired markdown files
   exif.ts           # EXIF extraction via exifr
   collections.ts    # Collection config types and validation

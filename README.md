@@ -23,16 +23,19 @@ claude plugin install qimg@pkm-query-tools
 
 **Requirements:** Node.js ≥ 22.0.0, ~200MB disk space for the SigLIP model (downloaded on first use).
 
-### Get Running in 3 Steps
+### Get Running in 4 Steps
 
 ```sh
 # 1. Register a folder as a collection
 qimg collection add ~/photos --name photos
 
-# 2. Scan and index your images
-qimg update --collection photos
+# 2. Scan and index your images (extracts EXIF, sidecar captions)
+qimg index --collection photos
 
-# 3. Generate semantic embeddings
+# 3. Generate AI captions for images without existing captions
+qimg caption --collection photos
+
+# 4. Generate semantic embeddings
 qimg embed --collection photos
 ```
 
@@ -132,23 +135,26 @@ qimg collection add ~/diagrams --name diagrams --mask "**/*.png"
 
 ### Indexing
 
-Two-step process: first scan files and extract metadata, then generate semantic embeddings.
+Three-step process: scan files and extract metadata, generate captions for images without them, then generate semantic embeddings.
 
 ```sh
-qimg update [--collection <name>]
-qimg embed  [--collection <name>] [--force]
+qimg index   [--collection <name>]
+qimg caption [--collection <name>] [--force]
+qimg embed   [--collection <name>] [--force]
 ```
 
-**`update`** — Walks the collection directory, hashes files, extracts EXIF metadata (camera, GPS, timestamp), and reads sidecar captions. Skips files that haven't changed since the last run.
+**`index`** — Walks the collection directory, hashes files, extracts EXIF metadata (camera, GPS, timestamp, embedded captions), and reads sidecar captions. Skips files that haven't changed since the last run.
+
+**`caption`** — Generates AI captions for images that don't have an existing caption from EXIF metadata or a sidecar note. Uses the BLIP vision-language model locally via transformers.js. Only processes images without captions unless `--force` is passed. Shows a live progress bar with ETA.
 
 **`embed`** — Generates SigLIP 2 vector embeddings for each image. Only processes images that don't already have a vector unless `--force` is passed. Shows a live progress bar with ETA.
 
 ```sh
-# Update and embed everything
-qimg update && qimg embed
+# Full indexing pipeline
+qimg index && qimg caption && qimg embed
 
-# Re-embed a specific collection from scratch
-qimg embed --collection photos --force
+# Re-caption and re-embed everything from scratch
+qimg caption --collection photos --force && qimg embed --force
 ```
 
 ---
@@ -172,7 +178,7 @@ qimg hsearch <query> [--image <path>] [--collection <name>] [-n <num>] [--json]
 
 **`tsearch` — Keyword Search**
 
-BM25 full-text search over filenames, EXIF text, and sidecar captions. Fast and exact — best when you know specific words that appear in a filename or caption.
+BM25 full-text search over filenames, EXIF text, sidecar captions, and AI-generated captions. Fast and exact — best when you know specific words that appear in a filename or caption.
 
 ```sh
 qimg tsearch "fishing rod"
@@ -275,7 +281,7 @@ ImageText: A person looking at a hook dangling from a fishing rod
 ---
 ```
 
-After running `qimg update`, the caption is indexed and the image becomes searchable:
+After running `qimg index`, the caption is indexed and the image becomes searchable:
 
 ```sh
 qimg tsearch "fishing rod"
@@ -297,7 +303,7 @@ Embeddings run locally via [transformers.js](https://huggingface.co/docs/transfo
 
 **2. BM25 Full-Text Search (Keyword Search)**
 
-Filenames, EXIF metadata, and sidecar captions are indexed in an [FTS5](https://www.sqlite.org/fts5.html) table inside a local SQLite database. BM25 ranking gives higher scores to images where query terms appear more specifically. This is fast, deterministic, and works offline without any model.
+Filenames, EXIF metadata, sidecar captions, and AI-generated captions are indexed in an [FTS5](https://www.sqlite.org/fts5.html) table inside a local SQLite database. BM25 ranking gives higher scores to images where query terms appear more specifically. This is fast, deterministic, and works offline without any model at search time.
 
 **3. Reciprocal Rank Fusion (Hybrid Search)**
 
@@ -307,6 +313,10 @@ Filenames, EXIF metadata, and sidecar captions are indexed in an [FTS5](https://
 
 For knowledge bases where images live in a separate folder tree from their markdown notes, qimg resolves captions by mirroring the directory structure. This lets human-written descriptions (stored as frontmatter in markdown) enrich the search index without modifying the image files themselves.
 
+**5. AI Caption Generation**
+
+Images without captions (either from EXIF metadata or sidecar notes) can be automatically captioned using the [BLIP](https://huggingface.co/Salesforce/blip-image-captioning-base) vision-language model. The `qimg caption` command generates natural-language descriptions for these images locally, making them discoverable through semantic search and full-text queries. Captions are generated only once and never overwrite existing human-written captions.
+
 **Storage:** All data is stored in a single SQLite file at `~/.cache/qimg/index.sqlite`. Collection config lives at `~/.config/qimg/index.yml`. Both paths are overridable via `QIMG_CACHE_DIR` and `QIMG_CONFIG_DIR`.
 
 ---
@@ -315,9 +325,9 @@ For knowledge bases where images live in a separate folder tree from their markd
 
 qimg is fully local. Nothing leaves your machine.
 
-- **No cloud calls** — Embeddings are generated on-device using ONNX Runtime. There are no API keys, no telemetry, and no network requests during search or indexing.
-- **No image uploads** — Images are read from disk, hashed, and embedded locally. The hash and vector are stored in a local SQLite database; the image bytes are never transmitted anywhere.
-- **Model downloaded once** — The SigLIP 2 ONNX model is fetched from Hugging Face on first use and cached locally. After that, the tool runs entirely offline.
+- **No cloud calls** — Embeddings and captions are generated on-device using ONNX Runtime. There are no API keys, no telemetry, and no network requests during search or indexing.
+- **No image uploads** — Images are read from disk, hashed, captioned, and embedded locally. The hash, caption, and vector are stored in a local SQLite database; the image bytes are never transmitted anywhere.
+- **Models downloaded once** — The SigLIP 2 and BLIP ONNX models are fetched from Hugging Face on first use and cached locally (~400MB total). After that, the tool runs entirely offline.
 - **You own your index** — The SQLite database and config files are plain files in standard XDG directories (`~/.cache/qimg/`, `~/.config/qimg/`). You can inspect, copy, or delete them at any time.
 
 ---

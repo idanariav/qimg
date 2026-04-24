@@ -221,6 +221,30 @@ export class Store {
     return this.db.prepare<[], ImageRow>(`SELECT * FROM images ORDER BY collection, path`).all();
   }
 
+  listUncaptioned(collection?: string): ImageRow[] {
+    if (collection) {
+      return this.db
+        .prepare<[string], ImageRow>(`SELECT * FROM images WHERE caption IS NULL AND collection = ? ORDER BY path`)
+        .all(collection);
+    }
+    return this.db.prepare<[], ImageRow>(`SELECT * FROM images WHERE caption IS NULL ORDER BY collection, path`).all();
+  }
+
+  updateCaption(id: number, caption: string): void {
+    this.db.prepare(`UPDATE images SET caption = ? WHERE id = ?`).run(caption, id);
+    const row = this.db
+      .prepare<[number], ImageRow>(`SELECT * FROM images WHERE id = ?`)
+      .get(id);
+    if (row) {
+      const filename = row.path.split("/").pop() ?? "";
+      this.db
+        .prepare(
+          `REPLACE INTO images_fts (rowid, path, filename, caption, exif_text) VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(id, row.path, filename, row.caption ?? "", row.exif_text ?? "");
+    }
+  }
+
   status(): { collections: number; images: number; vectors: number } {
     const collections = this.db
       .prepare<[], { c: number }>(`SELECT COUNT(DISTINCT collection) as c FROM images`)

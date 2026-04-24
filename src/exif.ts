@@ -12,6 +12,7 @@ export interface ExifData {
   lens?: string;
   gps_lat?: number;
   gps_lon?: number;
+  caption?: string; // ImageDescription, Caption, Description, Title, Headline from EXIF
   exif_text: string; // concatenated keywords/description for FTS
 }
 
@@ -34,11 +35,13 @@ export async function extractExif(imagePath: string): Promise<ExifData> {
       (data.DateTimeOriginal as Date | undefined) ||
       (data.CreateDate as Date | undefined);
 
-    const textBits: string[] = [];
+    const captionFields: string[] = [];
     for (const k of ["ImageDescription", "Caption", "Description", "Title", "Headline"]) {
       const v = data[k];
-      if (typeof v === "string" && v.trim()) textBits.push(v.trim());
+      if (typeof v === "string" && v.trim()) captionFields.push(v.trim());
     }
+
+    const textBits = [...captionFields];
     const keywords = data.Keywords ?? data.subject;
     if (Array.isArray(keywords)) textBits.push(keywords.join(" "));
     else if (typeof keywords === "string") textBits.push(keywords);
@@ -49,6 +52,7 @@ export async function extractExif(imagePath: string): Promise<ExifData> {
       lens,
       gps_lat: typeof data.latitude === "number" ? data.latitude : undefined,
       gps_lon: typeof data.longitude === "number" ? data.longitude : undefined,
+      caption: captionFields.length > 0 ? captionFields.join(" ") : undefined,
       exif_text: textBits.join(" ").trim(),
     };
   } catch {

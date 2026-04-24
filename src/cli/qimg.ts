@@ -4,8 +4,9 @@
  * Mirrors qmd's command surface for image search:
  *   collection add/list/remove/rename
  *   ls            - list indexed images
- *   update        - scan filesystem, hash files, extract EXIF + sidecar caption
+ *   index         - scan filesystem, hash files, extract EXIF + sidecar captions (additive)
  *   embed         - generate SigLIP vectors for images that don't have one
+ *   caption       - generate AI captions for images without caption/metadata
  *   get           - print metadata + caption for a single image
  *   tsearch       - BM25 over filename + caption + exif_text (text-only)
  *   vsearch       - vector cosine similarity (text or --image)
@@ -124,6 +125,11 @@ function flagStr(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
+function combineCaption(exifCaption: string | undefined, sidecarCaption: string | undefined): string | null {
+  const parts = [exifCaption, sidecarCaption].filter(Boolean);
+  return parts.length > 0 ? parts.join("\n\n") : null;
+}
+
 // ---------------------------------------------------------------------------
 // Output formatting
 // ---------------------------------------------------------------------------
@@ -154,8 +160,9 @@ Commands:
   collection remove <name>
   collection rename <old> <new>
   ls [collection]
-  update [--collection <n>]   Scan filesystem, hash, extract EXIF + caption
+  index [--collection <n>]   Scan filesystem, hash, extract EXIF + caption
   embed [--collection <n>] [--force]  Generate SigLIP vectors (--force re-embeds all)
+  caption [--collection <n>] [--force]  Generate AI captions (--force re-captions all)
   get <path|#docid>
   tsearch <query> [--collection <n>] [-n <num>] [--json]
   vsearch <query> [--image <path>] [--collection <n>] [-n <num>] [--json]
@@ -250,11 +257,11 @@ function cmdLs(args: ParsedArgs): void {
   }
 }
 
-async function cmdUpdate(args: ParsedArgs): Promise<void> {
+async function cmdIndex(args: ParsedArgs): Promise<void> {
   const only = flagStr(args.flags.collection);
   const cols = listCollections().filter((c) => !only || c.name === only);
   if (cols.length === 0) {
-    console.error("no collections to update");
+    console.error("no collections to index");
     process.exit(1);
   }
   const store = new Store();
@@ -312,7 +319,7 @@ async function cmdUpdate(args: ParsedArgs): Promise<void> {
           camera: exif.camera ?? null,
           gps_lat: exif.gps_lat ?? null,
           gps_lon: exif.gps_lon ?? null,
-          caption: sidecar?.caption ?? null,
+          caption: combineCaption(exif.caption, sidecar?.caption),
           sidecar_path: sidecar?.mdPath ?? null,
           sidecar_mtime: sidecar?.mdMtime ?? null,
           exif_text: exif.exif_text || null,
@@ -383,6 +390,67 @@ async function cmdEmbed(args: ParsedArgs): Promise<void> {
     if (isTTY) process.stderr.write("\n");
     console.log(
       `${c.green}✓ Done!${c.reset} Embedded ${c.bold}${done}${c.reset} images in ${c.bold}${formatETA((Date.now() - t0) / 1000)}${c.reset}` +
+        (errors > 0 ? ` ${c.yellow}(${errors} failed)${c.reset}` : ""),
+    );
+  } finally {
+    store.close();
+  }
+}
+
+async function cmdCaption(args: ParsedArgs): Promise<void> {
+  const only = flagStr(args.flags.collection);
+  const force = !!args.flags.force;
+  const store = new Store();
+  try {
+    const allRows = store.listImages(only);
+    const pending = force ? allRows : store.listUncaptioned(only);
+    const skipped = allRows.length - pending.length;
+    const total = pending.length;
+
+    if (total === 0) {
+      console.log(`${c.green}✓ All ${allRows.length} images already have captions.${c.reset}`);
+      return;
+    }
+
+    console.log(`${c.dim}Generating captions for ${total} images (${skipped} already done)${c.reset}`);
+    cursor.hide();
+    progress.indeterminate();
+    const t0 = Date.now();
+    let done = 0;
+    let errors = 0;
+    const { generateCaption } = await import("../caption.js");
+    for (const row of pending) {
+      const abs = resolve(getCollection(row.collection)!.path, row.path);
+      try {
+        const caption = await generateCaption(abs);
+        store.updateCaption(row.id, caption);
+        done++;
+      } catch (e) {
+        errors++;
+        if (isTTY) process.stderr.write("\r\x1b[K");
+        console.error(`failed: ${abs}: ${(e as Error).message}`);
+      }
+      const completed = done + errors;
+      const percent = (completed / total) * 100;
+      progress.set(percent);
+      const elapsed = (Date.now() - t0) / 1000;
+      const rate = completed / elapsed;
+      const etaSec = rate > 0 ? (total - completed) / rate : 0;
+      const bar = renderProgressBar(percent);
+      const percentStr = percent.toFixed(0).padStart(3);
+      const eta = elapsed > 2 ? formatETA(etaSec) : "...";
+      const errStr = errors > 0 ? ` ${c.yellow}${errors} err${c.reset}` : "";
+      if (isTTY) {
+        process.stderr.write(
+          `\r${c.cyan}${bar}${c.reset} ${c.bold}${percentStr}%${c.reset} ${c.dim}${completed}/${total}${c.reset}${errStr} ${c.dim}${rate.toFixed(1)}/s ETA ${eta}${c.reset}   `,
+        );
+      }
+    }
+    progress.clear();
+    cursor.show();
+    if (isTTY) process.stderr.write("\n");
+    console.log(
+      `${c.green}✓ Done!${c.reset} Generated captions for ${c.bold}${done}${c.reset} images in ${c.bold}${formatETA((Date.now() - t0) / 1000)}${c.reset}` +
         (errors > 0 ? ` ${c.yellow}(${errors} failed)${c.reset}` : ""),
     );
   } finally {
@@ -527,11 +595,14 @@ async function main(): Promise<void> {
     case "ls":
       cmdLs(args);
       break;
-    case "update":
-      await cmdUpdate(args);
+    case "index":
+      await cmdIndex(args);
       break;
     case "embed":
       await cmdEmbed(args);
+      break;
+    case "caption":
+      await cmdCaption(args);
       break;
     case "get":
       cmdGet(args);
