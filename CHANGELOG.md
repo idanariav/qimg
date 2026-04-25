@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-25
+
+### Added
+- LLM-powered image captioning for images without manual captions via `qimg caption` command
+- Claude Code plugin marketplace support with configuration
+- Documentation and setup simplification for marketplace integration
+
+### Changed
+- **Breaking**: Renamed `update` command to `index` for clarity
+- Updated marketplace configuration and alignment with shared standards
+
+### Fixed
+- Sidecar resolver enhancements
+- FTS5 table operations improvements
+- SigLIP image embedding fixes
+
 ## [0.1.0] - 2026-04-11
 
 Initial release.
