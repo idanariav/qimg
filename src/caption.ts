@@ -1,6 +1,6 @@
 import type { Pipeline } from "@huggingface/transformers";
 
-const MODEL = "Xenova/blip-image-captioning-base";
+const MODEL = "Xenova/vit-gpt2-image-captioning";
 let pipePromise: Promise<Pipeline> | null = null;
 
 function getCaptionPipe() {
