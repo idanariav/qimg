@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-25
+
+### Fixed
+- Replace `Xenova/blip-image-captioning-base` (now returns 401 on HuggingFace) with `Xenova/vit-gpt2-image-captioning`
+- Skip npm publish if version already exists in registry
+- GitHub release workflow improvements
+
 ## [0.2.0] - 2026-04-25
 
 ### Added
