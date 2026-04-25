@@ -30,7 +30,14 @@ jobs:
         run: npm run build
 
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE=$(node -p "require('./package.json').name")
+          if npm view "$PACKAGE@$VERSION" version > /dev/null 2>&1; then
+            echo "Version $VERSION already published — skipping"
+          else
+            npm publish --provenance --access public
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
