@@ -1,6 +1,6 @@
 {
   "name": "@idan_ariav/qimg",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Query Images - On-device hybrid search for image files with SigLIP 2 vector search and FTS5 caption search",
   "type": "module",
   "main": "dist/index.js",
