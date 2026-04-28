@@ -1,4 +1,10 @@
-# qimg — Developer Guide
+# qimg
+
+Local, offline hybrid image search — indexes images into SQLite with BM25 full-text search and SigLIP vector embeddings, with an MCP server for Claude integration.
+
+## General instructions
+
+When refactoring commands (renaming, adding/removing params) — review CLAUDE.md, relevant docs, and README.md to ensure no stale references remain.
 
 ## Commands
 
@@ -7,67 +13,64 @@ qimg collection add <path> --name <n> [--mask <glob>] [--sidecar-notes <dir>] [-
 qimg collection list
 qimg collection remove <name>
 qimg collection rename <old> <new>
-qimg index [--collection <n>]           # Scan filesystem, hash files, extract EXIF + sidecar captions
-qimg embed [--collection <n>] [--force]  # Generate SigLIP vector embeddings
+
+qimg index [--collection <n>]              # Scan filesystem, hash files, extract EXIF + sidecar captions
+qimg embed [--collection <n>] [--force]    # Generate SigLIP vector embeddings
 qimg caption [--collection <n>] [--force]  # Generate AI captions for un-captioned images
+
 qimg tsearch <query> [--collection <n>] [-n <num>] [--json]
 qimg vsearch <query> [--image <path>] [--collection <n>] [-n <num>] [--json]
 qimg hsearch <query> [--image <path>] [--collection <n>] [-n <num>] [--json]
+
 qimg get <path|#docid> [--collection <n>]
 qimg status
-qimg mcp                                 # Start MCP server (stdio)
+qimg mcp                                   # Start MCP server (stdio)
 ```
 
-## Development Setup
+## Development
 
 ```sh
-npm install
-npm run build        # Compile TypeScript → dist/
-npm test             # Run tests with vitest
+npm run build   # Compile TypeScript → dist/
+npm test        # Run test suite (vitest)
 ```
 
-Run from source without building (useful during development):
+Run from source during development (no build needed):
 
 ```sh
 npx tsx src/cli/qimg.ts <command>
 ```
 
-## Project Structure
+## Important: Do NOT run automatically
 
-```
-src/
-  cli/qimg.ts       # CLI entry point and command dispatch
-  mcp/server.ts     # MCP server (exposes hsearch, get, status tools)
-  store.ts          # SQLite store: FTS5 + sqlite-vec, collection management
-  embed.ts          # SigLIP 2 text and image embeddings via transformers.js
-  caption.ts        # BLIP image captioning via transformers.js
-  sidecar.ts        # Parallel-tree sidecar resolver for paired markdown files
-  exif.ts           # EXIF extraction via exifr
-  collections.ts    # Collection config types and validation
-  index.ts          # Public API re-exports
-test/
-  store.test.ts     # Store upsert, vector search, hybrid RRF fusion
-  sidecar.test.ts   # Parallel-tree sidecar path resolution
-```
+- Never run `qimg index`, `qimg embed`, or `qimg caption` automatically — these modify user data and may download large models
+- Write out example commands for the user to run manually
+
+## Do NOT compile unnecessarily
+
+Use `npx tsx src/cli/qimg.ts` during development. Only run `npm run build` when testing the compiled output or preparing a release.
+
+## Releasing
+
+Use `/npm-release` to cut a release.
+
+- Add changelog entries under `## [Unreleased]` **as you make changes**
+- The release script renames `[Unreleased]` → `[X.Y.Z] - date` at release time
 
 ## Config & Cache
 
 - Config: `~/.config/qimg/index.yml` (override with `QIMG_CONFIG_DIR`)
 - Cache/DB: `~/.cache/qimg/index.sqlite` (override with `QIMG_CACHE_DIR`)
 
-## Running Tests
+## Architecture
 
-```sh
-npm test
-```
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full module map, data flow, key types, and design decisions.
 
-Tests use vitest. The store tests create an in-memory SQLite database and do not require any external services or pre-downloaded models.
+Subsystem docs:
 
-## Publishing
-
-```sh
-npm run build
-npm publish
-```
-
-Requires `npm login` and `publishConfig.access: "public"` in `package.json` (already set).
+| Topic | File |
+|-------|------|
+| File discovery, EXIF, sidecar, upsert | [docs/INDEXING.md](docs/INDEXING.md) |
+| SigLIP model, vector storage, serialization | [docs/EMBEDDING.md](docs/EMBEDDING.md) |
+| ViT-GPT2 captioning, FTS update | [docs/CAPTIONING.md](docs/CAPTIONING.md) |
+| BM25, cosine, hybrid RRF search | [docs/SEARCHING.md](docs/SEARCHING.md) |
+| SQLite schema, Store class API | [docs/STORE.md](docs/STORE.md) |
