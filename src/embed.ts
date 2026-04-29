@@ -21,7 +21,7 @@ function loadTf(): Promise<TransformersModule> {
   return tfPromise;
 }
 
-export const SIGLIP_MODEL_ID = "Xenova/siglip-base-patch16-224";
+export const SIGLIP_MODEL_ID = "onnx-community/siglip2-base-patch16-224-ONNX";
 export const EMBED_DIM = 768;
 
 let textPipePromise: Promise<any> | null = null;

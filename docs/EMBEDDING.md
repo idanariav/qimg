@@ -20,12 +20,14 @@ Generates 768-dim SigLIP vector embeddings for indexed images and stores them in
 
 ## Model
 
-**Model ID:** `Xenova/siglip-base-patch16-224`  
+**Model ID:** `onnx-community/siglip2-base-patch16-224-ONNX`  
 **Runtime:** transformers.js (ONNX via `@huggingface/transformers`)  
 **Dimensions:** 768 (`EMBED_DIM` constant in `src/embed.ts`)  
 **Cache:** `~/.cache/huggingface` (downloaded on first run, ~200MB)
 
-SigLIP text and image encoders project into the **same 768-dim space**, enabling cross-modal search: a text query can retrieve images using the same index.
+SigLIP 2 text and image encoders project into the **same 768-dim space**, enabling cross-modal search: a text query can retrieve images using the same index. SigLIP 2 improves text-to-image retrieval accuracy ~7% over SigLIP 1 (COCO I→T R@1: 65.1% → 69.7%).
+
+**Note:** If upgrading from a prior SigLIP 1 index, run `qimg embed --force` to regenerate all vectors in the new embedding space.
 
 ## Key Functions — `src/embed.ts`
 

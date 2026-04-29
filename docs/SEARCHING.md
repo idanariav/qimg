@@ -14,30 +14,31 @@ All search functions are in `src/store.ts`. All return `SearchHit[]`.
 
 ## 1. Full-Text Search (tsearch)
 
-**Function:** `Store.searchFts(query, limit, collection?)`
+**Function:** `Store.searchFts(query, limit, filters?)`
 
 Queries the FTS5 virtual table `images_fts`:
 ```sql
 SELECT rowid, rank FROM images_fts
+JOIN images i ON i.id = images_fts.rowid
 WHERE images_fts MATCH ?
-ORDER BY rank LIMIT ?
+  [AND i.collection = ?]  [AND i.taken_at >= ?]  [AND i.taken_at <= ?]
+ORDER BY score DESC LIMIT ?
 ```
 
 FTS5 config:
 - **Tokenizer:** `porter unicode61` (stemming + Unicode normalization)
-- **Indexed columns:** `path`, `filename`, `caption`, `exif_text`
-- Results are joined back to `images` for full `SearchHit` fields
+- **Indexed columns:** `path`, `filename`, `caption`, `exif_text`, `ocr_text`
 - Scores are normalized to `[0..1]` by dividing by the top result's rank
 
-**Use case:** Keyword search over filenames, captions, and EXIF keywords.
+**Use case:** Keyword search over filenames, captions, EXIF keywords, and OCR-extracted text.
 
 ---
 
 ## 2. Vector Search (vsearch)
 
-**Functions:** `embedText(query)` or `embedImage(imagePath)` → `Store.searchVec(embedding, limit, collection?)`
+**Functions:** `embedText(query)` or `embedImage(imagePath)` → `Store.searchVec(embedding, limit, filters?)`
 
-Both text and image queries produce a 768-dim Float32Array in SigLIP's shared embedding space (see [EMBEDDING.md](EMBEDDING.md)).
+Both text and image queries produce a 768-dim Float32Array in SigLIP 2's shared embedding space (see [EMBEDDING.md](EMBEDDING.md)).
 
 `searchVec` uses a **two-step query** (workaround for sqlite-vec inline JOIN hang):
 
@@ -46,13 +47,12 @@ Both text and image queries produce a 768-dim Float32Array in SigLIP's shared em
 SELECT hash, distance FROM image_vectors
 WHERE embedding MATCH ? AND k = ?
 
--- Step 2: join to images table
+-- Step 2: join to images table, apply filters
 SELECT ... FROM images WHERE hash IN (...)
+  [AND collection = ?]  [AND taken_at >= ?]  [AND taken_at <= ?]
 ```
 
 Score: `1 - distance` (cosine distance → similarity, range `[0..1]`).
-
-If `collection` is specified, the JOIN filters by collection after the vector fetch.
 
 **Use case:** Semantic search — find images by meaning, not just keywords. Also supports visual similarity search (`--image` flag).
 
@@ -93,9 +93,13 @@ When `--image <path>` is provided:
 | Flag | Effect |
 |------|--------|
 | `--collection <name>` | Restrict search to one collection |
-| `-n <num>` | Max results (default 10) |
+| `--after YYYY-MM-DD` | Only return images taken on or after this date |
+| `--before YYYY-MM-DD` | Only return images taken on or before this date |
+| `-n <num>` | Max results (default 20) |
 | `--json` | Output results as JSON array |
 | `--image <path>` | Use image as query (vsearch/hsearch only) |
+
+Date filters apply to the `taken_at` field (EXIF DateTimeOriginal). Images without EXIF dates are excluded when a date filter is active.
 
 ---
 
@@ -104,6 +108,7 @@ When `--image <path>` is provided:
 `src/mcp/server.ts` exposes a `hsearch` MCP tool that runs identical hybrid search logic:
 - `query` (string) OR `image_path` (string)
 - `limit` (default 20), `collection` (optional)
+- `after` (YYYY-MM-DD, optional), `before` (YYYY-MM-DD, optional)
 - Returns `SearchHit[]` serialized as JSON
 
 ---

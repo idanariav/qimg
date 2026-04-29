@@ -27,27 +27,30 @@ CREATE TABLE images (
   sidecar_path TEXT,
   sidecar_mtime INTEGER,
   exif_text   TEXT,                    -- flattened keywords for FTS
+  ocr_text    TEXT,                    -- text extracted from image via OCR
   mtime       INTEGER NOT NULL,        -- file modification time (ms)
-  indexed_at  TEXT NOT NULL,           -- ISO timestamp
+  indexed_at  INTEGER NOT NULL,        -- Unix ms timestamp
   UNIQUE(collection, path)
 )
 ```
 
+Indexes: `idx_images_hash`, `idx_images_collection`, `idx_images_taken_at`.
+
 ### `images_fts` — FTS5 virtual table
 
-Content-based FTS5 table backed by `images`:
+Contentless FTS5 table (stores its own inverted index):
 
 ```sql
 CREATE VIRTUAL TABLE images_fts USING fts5(
-  path, filename, caption, exif_text,
-  content='images', content_rowid='id',
+  path, filename, caption, exif_text, ocr_text,
+  content='',
   tokenize='porter unicode61'
 )
 ```
 
 - `porter` stemming (run/runs/running → run)
 - `unicode61` normalization (handles accents, case)
-- Reindexed on every `upsertImage()` call via `INSERT INTO images_fts(images_fts, rowid, ...) VALUES ('delete', ...)`  followed by re-insert
+- Reindexed on every `upsertImage()`, `updateCaption()`, and `updateOcr()` call via `REPLACE INTO`
 
 ### `image_vectors` — sqlite-vec vec0 table
 
@@ -58,7 +61,7 @@ CREATE VIRTUAL TABLE image_vectors USING vec0(
 )
 ```
 
-- 768-dim float vectors (SigLIP embeddings)
+- 768-dim float vectors (SigLIP 2 embeddings)
 - Keyed by file hash (not row ID) — stable across renames and cross-collection dedup
 - Cosine distance metric (sqlite-vec computes 1 - cosine_similarity internally)
 
@@ -71,29 +74,36 @@ Opens or creates the SQLite DB, loads the sqlite-vec extension, enables WAL mode
 
 | Method | Description |
 |--------|-------------|
-| `upsertImage(row)` | INSERT OR REPLACE into `images`; deletes old FTS entry and re-inserts new one |
+| `upsertImage(row)` | INSERT OR REPLACE into `images`; triggers FTS reindex |
 | `upsertVector(hash, Float32Array)` | INSERT OR REPLACE into `image_vectors` |
 | `updateCaption(id, caption)` | UPDATE `images.caption`; triggers FTS reindex for the row |
+| `updateOcr(id, ocrText)` | UPDATE `images.ocr_text`; triggers FTS reindex for the row |
 | `deleteImage(collection, path)` | DELETE from `images`, `images_fts`, and `image_vectors` |
 
 ### Read Methods
 
 | Method | Returns | Notes |
 |--------|---------|-------|
-| `getByPath(collection, path)` | `ImageRow \| undefined` | Exact lookup |
-| `getById(id)` | `ImageRow \| undefined` | Lookup by primary key |
+| `getByPath(collection, path)` | `ImageRow \| null` | Exact lookup |
 | `listImages(collection?)` | `ImageRow[]` | All images, optionally filtered |
 | `listUncaptioned(collection?)` | `ImageRow[]` | WHERE caption IS NULL |
+| `listWithoutOcr(collection?)` | `ImageRow[]` | WHERE ocr_text IS NULL |
 | `hasVector(hash)` | `boolean` | Check if embedding exists |
-| `status()` | `{collections, images, vectors}` | Aggregate counts |
+| `status()` | `{collections, images, vectors, ocr}` | Aggregate counts |
 
 ### Search Methods
 
 | Method | Description |
 |--------|-------------|
-| `searchFts(query, limit, collection?)` | BM25 over `images_fts`; returns normalized `SearchHit[]` |
-| `searchVec(embedding, limit, collection?)` | Two-step cosine search; returns `SearchHit[]` sorted by `1 - distance` |
+| `searchFts(query, limit, filters?)` | BM25 over `images_fts`; returns normalized `SearchHit[]` |
+| `searchVec(embedding, limit, filters?)` | Two-step cosine search; returns `SearchHit[]` sorted by `1 - distance` |
 | `hybridQuery(ftsHits, vecHits, limit, k?)` | RRF fusion of two hit lists; default k=60 |
+
+`SearchFilters` (optional on all search methods):
+```typescript
+{ collection?: string; after?: number; before?: number }
+// after/before are Unix ms timestamps from taken_at
+```
 
 ## Two-Step Vector Query Pattern
 

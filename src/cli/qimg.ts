@@ -16,8 +16,8 @@
  */
 
 import fg from "fast-glob";
-import { resolve, relative } from "path";
-import { existsSync, statSync } from "fs";
+import { resolve } from "path";
+import { existsSync } from "fs";
 import {
   addCollection,
   getCollection,
@@ -28,7 +28,7 @@ import {
   getConfigPath,
 } from "../collections.js";
 import { Store, hashFile, fileMtime } from "../store.js";
-import type { SearchHit } from "../store.js";
+import type { SearchHit, SearchFilters } from "../store.js";
 import { resolveSidecar, clearSidecarCache } from "../sidecar.js";
 import { extractExif } from "../exif.js";
 import { embedText, embedImage } from "../embed.js";
@@ -125,6 +125,32 @@ function flagStr(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
+/**
+ * Parse a YYYY-MM-DD string into Unix ms.
+ * endOfDay=true returns the last millisecond of that day (for --before).
+ */
+function parseDate(v: unknown, endOfDay = false): number | undefined {
+  if (typeof v !== "string") return undefined;
+  const d = new Date(v);
+  if (isNaN(d.getTime())) {
+    console.error(`invalid date: ${v} (expected YYYY-MM-DD)`);
+    process.exit(2);
+  }
+  if (endOfDay) d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
+
+function buildFilters(args: ParsedArgs): SearchFilters {
+  const filters: SearchFilters = {};
+  const col = flagStr(args.flags.collection);
+  if (col) filters.collection = col;
+  const after = parseDate(args.flags.after, false);
+  if (after != null) filters.after = after;
+  const before = parseDate(args.flags.before, true);
+  if (before != null) filters.before = before;
+  return filters;
+}
+
 function combineCaption(exifCaption: string | undefined, sidecarCaption: string | undefined): string | null {
   const parts = [exifCaption, sidecarCaption].filter(Boolean);
   return parts.length > 0 ? parts.join("\n\n") : null;
@@ -161,12 +187,13 @@ Commands:
   collection rename <old> <new>
   ls [collection]
   index [--collection <n>]   Scan filesystem, hash, extract EXIF + caption
-  embed [--collection <n>] [--force]  Generate SigLIP vectors (--force re-embeds all)
+  embed [--collection <n>] [--force]  Generate SigLIP 2 vectors (--force re-embeds all)
   caption [--collection <n>] [--force]  Generate AI captions (--force re-captions all)
+  ocr [--collection <n>] [--force]  Extract text from images via OCR (--force re-runs all)
   get <path|#docid>
-  tsearch <query> [--collection <n>] [-n <num>] [--json]
-  vsearch <query> [--image <path>] [--collection <n>] [-n <num>] [--json]
-  hsearch <query> [--image <path>] [--collection <n>] [-n <num>] [--json]
+  tsearch <query> [--collection <n>] [--after YYYY-MM-DD] [--before YYYY-MM-DD] [-n <num>] [--json]
+  vsearch <query> [--image <path>] [--collection <n>] [--after YYYY-MM-DD] [--before YYYY-MM-DD] [-n <num>] [--json]
+  hsearch <query> [--image <path>] [--collection <n>] [--after YYYY-MM-DD] [--before YYYY-MM-DD] [-n <num>] [--json]
   status
   mcp
 
@@ -458,6 +485,71 @@ async function cmdCaption(args: ParsedArgs): Promise<void> {
   }
 }
 
+async function cmdOcr(args: ParsedArgs): Promise<void> {
+  const only = flagStr(args.flags.collection);
+  const force = !!args.flags.force;
+  const store = new Store();
+  try {
+    const allRows = store.listImages(only);
+    const pending = force ? allRows : store.listWithoutOcr(only);
+    const skipped = allRows.length - pending.length;
+    const total = pending.length;
+
+    if (total === 0) {
+      console.log(`${c.green}✓ All ${allRows.length} images already have OCR text.${c.reset}`);
+      return;
+    }
+
+    console.log(`${c.dim}Running OCR on ${total} images (${skipped} already done)${c.reset}`);
+    cursor.hide();
+    progress.indeterminate();
+    const t0 = Date.now();
+    let done = 0;
+    let errors = 0;
+    const { extractOcrText, terminateOcrWorker } = await import("../ocr.js");
+    try {
+      for (const row of pending) {
+        const abs = resolve(getCollection(row.collection)!.path, row.path);
+        try {
+          const ocrText = await extractOcrText(abs);
+          store.updateOcr(row.id, ocrText);
+          done++;
+        } catch (e) {
+          errors++;
+          if (isTTY) process.stderr.write("\r\x1b[K");
+          console.error(`failed: ${abs}: ${(e as Error).message}`);
+        }
+        const completed = done + errors;
+        const percent = (completed / total) * 100;
+        progress.set(percent);
+        const elapsed = (Date.now() - t0) / 1000;
+        const rate = completed / elapsed;
+        const etaSec = rate > 0 ? (total - completed) / rate : 0;
+        const bar = renderProgressBar(percent);
+        const percentStr = percent.toFixed(0).padStart(3);
+        const eta = elapsed > 2 ? formatETA(etaSec) : "...";
+        const errStr = errors > 0 ? ` ${c.yellow}${errors} err${c.reset}` : "";
+        if (isTTY) {
+          process.stderr.write(
+            `\r${c.cyan}${bar}${c.reset} ${c.bold}${percentStr}%${c.reset} ${c.dim}${completed}/${total}${c.reset}${errStr} ${c.dim}${rate.toFixed(1)}/s ETA ${eta}${c.reset}   `,
+          );
+        }
+      }
+    } finally {
+      await terminateOcrWorker();
+    }
+    progress.clear();
+    cursor.show();
+    if (isTTY) process.stderr.write("\n");
+    console.log(
+      `${c.green}✓ Done!${c.reset} OCR processed ${c.bold}${done}${c.reset} images in ${c.bold}${formatETA((Date.now() - t0) / 1000)}${c.reset}` +
+        (errors > 0 ? ` ${c.yellow}(${errors} failed)${c.reset}` : ""),
+    );
+  } finally {
+    store.close();
+  }
+}
+
 function cmdGet(args: ParsedArgs): void {
   const target = args.positional[0];
   if (!target) {
@@ -490,8 +582,7 @@ async function cmdSearch(args: ParsedArgs): Promise<void> {
   const store = new Store();
   try {
     const limit = flagNum(args.flags.n, 20);
-    const collection = flagStr(args.flags.collection);
-    const hits = store.searchFts(query, limit, collection);
+    const hits = store.searchFts(query, limit, buildFilters(args));
     printHits(hits, !!args.flags.json);
   } finally {
     store.close();
@@ -502,7 +593,6 @@ async function cmdVsearch(args: ParsedArgs): Promise<void> {
   const store = new Store();
   try {
     const limit = flagNum(args.flags.n, 20);
-    const collection = flagStr(args.flags.collection);
     const imgPath = flagStr(args.flags.image);
     let embedding: Float32Array;
     if (imgPath) {
@@ -515,7 +605,7 @@ async function cmdVsearch(args: ParsedArgs): Promise<void> {
       }
       embedding = await embedText(query);
     }
-    const hits = store.searchVec(embedding, limit, collection);
+    const hits = store.searchVec(embedding, limit, buildFilters(args));
     printHits(hits, !!args.flags.json);
   } finally {
     store.close();
@@ -526,7 +616,7 @@ async function cmdQuery(args: ParsedArgs): Promise<void> {
   const store = new Store();
   try {
     const limit = flagNum(args.flags.n, 20);
-    const collection = flagStr(args.flags.collection);
+    const filters = buildFilters(args);
     const imgPath = flagStr(args.flags.image);
     const query = args.positional.join(" ");
 
@@ -535,15 +625,15 @@ async function cmdQuery(args: ParsedArgs): Promise<void> {
 
     if (imgPath) {
       const v = await embedImage(resolve(imgPath));
-      vecHits = store.searchVec(v, limit * 2, collection);
+      vecHits = store.searchVec(v, limit * 2, filters);
     } else {
       if (!query) {
         console.error("usage: qimg hsearch <query> | --image <path>");
         process.exit(2);
       }
-      ftsHits = store.searchFts(query, limit * 2, collection);
+      ftsHits = store.searchFts(query, limit * 2, filters);
       const v = await embedText(query);
-      vecHits = store.searchVec(v, limit * 2, collection);
+      vecHits = store.searchVec(v, limit * 2, filters);
     }
 
     const fused = store.hybridQuery(ftsHits, vecHits, limit);
@@ -562,6 +652,7 @@ function cmdStatus(): void {
     console.log(`collections: ${s.collections} (${cols.length} configured)`);
     console.log(`images:      ${s.images}`);
     console.log(`vectors:     ${s.vectors}`);
+    console.log(`ocr:         ${s.ocr}`);
     for (const c of cols) {
       console.log(`  - ${c.name} → ${c.path}`);
     }
@@ -603,6 +694,9 @@ async function main(): Promise<void> {
       break;
     case "caption":
       await cmdCaption(args);
+      break;
+    case "ocr":
+      await cmdOcr(args);
       break;
     case "get":
       cmdGet(args);

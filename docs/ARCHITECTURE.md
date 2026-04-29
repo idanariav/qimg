@@ -7,9 +7,10 @@ qimg is a local, offline hybrid image search system. It indexes images into a SQ
 | File | Purpose | Key Exports |
 |------|---------|-------------|
 | `src/cli/qimg.ts` | CLI entry point and command dispatch | All commands |
-| `src/store.ts` | SQLite persistence, FTS, vector search, RRF | `Store`, `ImageRow`, `SearchHit`, `hashFile`, `fileMtime` |
+| `src/store.ts` | SQLite persistence, FTS, vector search, RRF | `Store`, `ImageRow`, `SearchHit`, `SearchFilters`, `hashFile`, `fileMtime` |
 | `src/embed.ts` | SigLIP 2 text/image embeddings (ONNX) | `embedText`, `embedImage`, `EMBED_DIM`, `float32ToBuffer`, `bufferToFloat32` |
-| `src/caption.ts` | ViT-GPT2 AI captions (ONNX) | `generateCaption` |
+| `src/caption.ts` | SmolVLM-256M AI captions (ONNX) | `generateCaption` |
+| `src/ocr.ts` | Tesseract.js OCR text extraction | `extractOcrText`, `terminateOcrWorker` |
 | `src/sidecar.ts` | Resolve captions from paired markdown files | `resolveSidecar`, `clearSidecarCache`, `SidecarResult` |
 | `src/exif.ts` | EXIF/IPTC/XMP metadata extraction | `extractExif`, `ExifData` |
 | `src/collections.ts` | YAML config management for collections | `Collection`, `addCollection`, `listCollections`, `loadConfig`, `saveConfig` |
@@ -30,15 +31,22 @@ qimg index
 qimg embed
   └─ src/store.ts:Store.listImages() [filter: no vector]
   └─ src/embed.ts:embedImage()
-       └─ Xenova/siglip-base-patch16-224 (ONNX)
+       └─ onnx-community/siglip2-base-patch16-224-ONNX
   └─ src/store.ts:Store.upsertVector()
        └─ image_vectors (vec0)
 
 qimg caption
   └─ src/store.ts:Store.listUncaptioned()
   └─ src/caption.ts:generateCaption()
-       └─ Xenova/vit-gpt2-image-captioning (ONNX)
+       └─ HuggingFaceTB/SmolVLM-256M-Instruct (ONNX, chat-template API)
   └─ src/store.ts:Store.updateCaption()
+       └─ images table + FTS reindex
+
+qimg ocr
+  └─ src/store.ts:Store.listWithoutOcr()
+  └─ src/ocr.ts:extractOcrText()
+       └─ tesseract.js (eng language model)
+  └─ src/store.ts:Store.updateOcr()
        └─ images table + FTS reindex
 
 qimg tsearch / vsearch / hsearch
@@ -61,7 +69,8 @@ ImageRow {
   taken_at?, camera?, gps_lat?, gps_lon?,   // EXIF
   caption?, sidecar_path?, sidecar_mtime?,
   exif_text?,                                // FTS search target
-  mtime: number, indexed_at: string
+  ocr_text?,                                 // OCR-extracted text (FTS search target)
+  mtime: number, indexed_at: number
 }
 
 SearchHit {
@@ -110,9 +119,9 @@ Three tools exposed:
 
 | Tool | Inputs | Returns |
 |------|--------|---------|
-| `hsearch` | `query` (string) OR `image_path` (string), `limit` (default 20), `collection` (optional) | `SearchHit[]` as JSON |
+| `hsearch` | `query` (string) OR `image_path` (string), `limit` (default 20), `collection` (optional), `after`/`before` (YYYY-MM-DD, optional) | `SearchHit[]` as JSON |
 | `get` | `path` (relative or `collection/path`) | `ImageRow` as JSON or "not found" |
-| `status` | — | `{collections, images, vectors}` counts |
+| `status` | — | `{collections, images, vectors, ocr}` counts |
 
 The MCP `hsearch` tool runs identical logic to the CLI `hsearch` command: parallel FTS + vector search at 2× limit, fused via `hybridQuery()`.
 

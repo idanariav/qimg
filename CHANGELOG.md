@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+- `qimg ocr [--collection <n>] [--force]` — extract visible text from images via Tesseract.js; stored in new `ocr_text` column and indexed into FTS5 for keyword search
+- `--after YYYY-MM-DD` / `--before YYYY-MM-DD` date filters on `tsearch`, `vsearch`, `hsearch` — restrict results to images with EXIF `taken_at` within the range
+- `after` / `before` parameters on MCP `hsearch` tool (same semantics)
+- `ocr` count in `qimg status` output
+
+### Changed
+- **Captioning model**: replaced `Xenova/vit-gpt2-image-captioning` with `HuggingFaceTB/SmolVLM-256M-Instruct` — significantly higher-quality captions via instruction-prompted VLM using the low-level `AutoModelForVision2Seq` API with chat template
+- **Embedding model**: upgraded from `Xenova/siglip-base-patch16-224` (SigLIP 1) to `onnx-community/siglip2-base-patch16-224-ONNX` (SigLIP 2) — ~7% better text-to-image retrieval. **Run `qimg embed --force` after upgrading to regenerate vectors**
+- FTS5 index now includes `ocr_text` alongside `path`, `filename`, `caption`, `exif_text`
+- `Store.searchFts()` and `Store.searchVec()` now accept a `SearchFilters` object (`{ collection?, after?, before? }`) instead of a positional `collection?` string
+- `Store.status()` return type extended with `ocr: number`
+- Schema migration (user_version 0→1): adds `ocr_text` column, recreates FTS5 with new column, rebuilds FTS from existing data — runs automatically on first DB open
+
 ## [0.2.1] - 2026-04-25
 
 ### Fixed

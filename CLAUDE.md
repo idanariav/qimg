@@ -15,12 +15,13 @@ qimg collection remove <name>
 qimg collection rename <old> <new>
 
 qimg index [--collection <n>]              # Scan filesystem, hash files, extract EXIF + sidecar captions
-qimg embed [--collection <n>] [--force]    # Generate SigLIP vector embeddings
-qimg caption [--collection <n>] [--force]  # Generate AI captions for un-captioned images
+qimg embed [--collection <n>] [--force]    # Generate SigLIP 2 vector embeddings
+qimg caption [--collection <n>] [--force]  # Generate AI captions for un-captioned images (SmolVLM-256M)
+qimg ocr [--collection <n>] [--force]      # Extract text from images via Tesseract OCR
 
-qimg tsearch <query> [--collection <n>] [-n <num>] [--json]
-qimg vsearch <query> [--image <path>] [--collection <n>] [-n <num>] [--json]
-qimg hsearch <query> [--image <path>] [--collection <n>] [-n <num>] [--json]
+qimg tsearch <query> [--collection <n>] [--after YYYY-MM-DD] [--before YYYY-MM-DD] [-n <num>] [--json]
+qimg vsearch <query> [--image <path>] [--collection <n>] [--after YYYY-MM-DD] [--before YYYY-MM-DD] [-n <num>] [--json]
+qimg hsearch <query> [--image <path>] [--collection <n>] [--after YYYY-MM-DD] [--before YYYY-MM-DD] [-n <num>] [--json]
 
 qimg get <path|#docid> [--collection <n>]
 qimg status
@@ -42,7 +43,7 @@ npx tsx src/cli/qimg.ts <command>
 
 ## Important: Do NOT run automatically
 
-- Never run `qimg index`, `qimg embed`, or `qimg caption` automatically — these modify user data and may download large models
+- Never run `qimg index`, `qimg embed`, `qimg caption`, or `qimg ocr` automatically — these modify user data and may download large models
 - Write out example commands for the user to run manually
 
 ## Do NOT compile unnecessarily
@@ -70,7 +71,8 @@ Subsystem docs:
 | Topic | File |
 |-------|------|
 | File discovery, EXIF, sidecar, upsert | [docs/INDEXING.md](docs/INDEXING.md) |
-| SigLIP model, vector storage, serialization | [docs/EMBEDDING.md](docs/EMBEDDING.md) |
-| ViT-GPT2 captioning, FTS update | [docs/CAPTIONING.md](docs/CAPTIONING.md) |
+| SigLIP 2 model, vector storage, serialization | [docs/EMBEDDING.md](docs/EMBEDDING.md) |
+| SmolVLM captioning, FTS update | [docs/CAPTIONING.md](docs/CAPTIONING.md) |
+| Tesseract OCR pipeline, FTS update | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | BM25, cosine, hybrid RRF search | [docs/SEARCHING.md](docs/SEARCHING.md) |
 | SQLite schema, Store class API | [docs/STORE.md](docs/STORE.md) |

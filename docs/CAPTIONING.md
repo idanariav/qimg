@@ -11,19 +11,23 @@ Generates AI captions for images that have no caption in the store. Captions are
 1. List uncaptioned images from store
 2. If --force, re-caption all images instead
 3. For each pending image:
-   a. Run ViT-GPT2 captioning model (ONNX)
-   b. Extract generated_text
-   c. Update caption in store (triggers FTS reindex)
+   a. Build chat-template prompt with image + text instruction
+   b. Run SmolVLM-256M vision-language model (ONNX)
+   c. Decode generated tokens (input tokens trimmed)
+   d. Update caption in store (triggers FTS reindex)
 4. Report stats
 ```
 
 ## Model
 
-**Model ID:** `Xenova/vit-gpt2-image-captioning`  
-**Runtime:** transformers.js (`image-to-text` pipeline, ONNX)  
-**Cache:** `~/.cache/huggingface` (downloaded on first run)
+**Model ID:** `HuggingFaceTB/SmolVLM-256M-Instruct`  
+**Runtime:** transformers.js (`AutoModelForVision2Seq` low-level API, ONNX)  
+**Cache:** `~/.cache/huggingface` (downloaded on first run)  
+**Prompt:** `"Describe this image concisely in one or two sentences."`
 
-Uses a **lazy singleton** — the pipeline is initialized on first call. Non-captioning commands do not load the model.
+SmolVLM is a 256M-parameter vision-language model that produces significantly higher quality captions than the previous ViT-GPT2 model. It requires the chat-template API — the `image-to-text` pipeline is not used because it does not support instruction prompting.
+
+Uses a **lazy singleton** — model components are initialized on first call. Non-captioning commands do not load the model.
 
 ## Key Function — `src/caption.ts`
 
@@ -31,7 +35,7 @@ Uses a **lazy singleton** — the pipeline is initialized on first call. Non-cap
 generateCaption(imagePath: string): Promise<string>
 ```
 
-Calls the `image-to-text` transformers.js pipeline with the image path, returns `result[0].generated_text`.
+Builds a chat-template message with image + text prompt, runs `AutoModelForVision2Seq.generate()`, then decodes only the newly generated tokens (input tokens are trimmed from the output).
 
 ## Store Updates
 

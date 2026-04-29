@@ -32,7 +32,7 @@ export async function startMcp(opts: McpOptions = {}): Promise<void> {
       {
         name: "hsearch",
         description:
-          "Hybrid image search (BM25 over captions + SigLIP vector). Provide `query` for text search or `image_path` for image-similarity search.",
+          "Hybrid image search (BM25 over captions + SigLIP 2 vector). Provide `query` for text search or `image_path` for image-similarity search.",
         inputSchema: {
           type: "object",
           properties: {
@@ -40,6 +40,8 @@ export async function startMcp(opts: McpOptions = {}): Promise<void> {
             image_path: { type: "string", description: "Absolute path to an image for image-similarity search (mutually exclusive with query)" },
             limit: { type: "number", description: "Maximum number of results to return (default: 20)" },
             collection: { type: "string", description: "Restrict search to a specific collection name" },
+            after: { type: "string", description: "Only return images taken on or after this date (YYYY-MM-DD)" },
+            before: { type: "string", description: "Only return images taken on or before this date (YYYY-MM-DD)" },
           },
         },
       },
@@ -66,19 +68,29 @@ export async function startMcp(opts: McpOptions = {}): Promise<void> {
 
     if (name === "hsearch") {
       const limit = typeof args.limit === "number" ? args.limit : 20;
-      const collection = typeof args.collection === "string" ? args.collection : undefined;
       const imagePath = typeof args.image_path === "string" ? args.image_path : undefined;
       const query = typeof args.query === "string" ? args.query : "";
+
+      const filters: { collection?: string; after?: number; before?: number } = {};
+      if (typeof args.collection === "string") filters.collection = args.collection;
+      if (typeof args.after === "string") {
+        const d = new Date(args.after);
+        if (!isNaN(d.getTime())) filters.after = d.getTime();
+      }
+      if (typeof args.before === "string") {
+        const d = new Date(args.before);
+        if (!isNaN(d.getTime())) { d.setHours(23, 59, 59, 999); filters.before = d.getTime(); }
+      }
 
       let vecHits: SearchHit[] = [];
       let ftsHits: SearchHit[] = [];
       if (imagePath) {
         const v = await embedImage(resolve(imagePath));
-        vecHits = store.searchVec(v, limit * 2, collection);
+        vecHits = store.searchVec(v, limit * 2, filters);
       } else if (query) {
-        ftsHits = store.searchFts(query, limit * 2, collection);
+        ftsHits = store.searchFts(query, limit * 2, filters);
         const v = await embedText(query);
-        vecHits = store.searchVec(v, limit * 2, collection);
+        vecHits = store.searchVec(v, limit * 2, filters);
       }
       const fused = store.hybridQuery(ftsHits, vecHits, limit);
       return { content: [{ type: "text", text: JSON.stringify(fused, null, 2) }] };
