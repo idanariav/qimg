@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.0] - 2026-05-02
 
 ### Added
 - `qimg ocr [--collection <n>] [--force]` — extract visible text from images via Tesseract.js; stored in new `ocr_text` column and indexed into FTS5 for keyword search
