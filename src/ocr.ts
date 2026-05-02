@@ -1,20 +1,19 @@
 // Tesseract.js OCR wrapper. Worker is lazily created and kept alive for the
 // lifetime of a `qimg ocr` run, then terminated via terminateOcrWorker().
-// Language data is cached in the qimg cache dir (~/.cache/qimg/) alongside
-// the SQLite database.
+// Language data (.traineddata) is stored in the qimg config dir (~/.config/qimg/).
 
 import { mkdirSync } from "fs";
-import { getCacheDir } from "./store.js";
+import { getConfigDir } from "./collections.js";
 
 let workerPromise: Promise<any> | null = null;
 
 async function getWorker(): Promise<any> {
   if (!workerPromise) {
     workerPromise = (async () => {
-      const cacheDir = getCacheDir();
-      mkdirSync(cacheDir, { recursive: true });
+      const configDir = getConfigDir();
+      mkdirSync(configDir, { recursive: true });
       const { createWorker } = await import("tesseract.js");
-      return createWorker("eng", 1, { cachePath: cacheDir });
+      return createWorker("eng", 1, { cachePath: configDir });
     })();
   }
   return workerPromise;

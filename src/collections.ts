@@ -30,7 +30,7 @@ export interface NamedCollection extends Collection {
   name: string;
 }
 
-function getConfigDir(): string {
+export function getConfigDir(): string {
   if (process.env.QIMG_CONFIG_DIR) return process.env.QIMG_CONFIG_DIR;
   if (process.env.XDG_CONFIG_HOME) return join(process.env.XDG_CONFIG_HOME, "qimg");
   return join(homedir(), ".config", "qimg");
