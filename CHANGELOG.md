@@ -1,19 +1,18 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.1] - 2026-07-18
 
 ### Changed
 - **`tsearch`/`hsearch` full-text matching**: `Store.searchFts()` now matches queries as an AND of individually-quoted terms instead of one exact adjacent phrase — e.g. `qimg tsearch "red sunset ocean"` now matches a caption like "sunset over the ocean, red sky". This improves recall for natural-language queries but is a behavior change if you relied on the old strict-phrase matching.
+- `hashFile` now streams the file instead of reading it fully into memory before hashing
 
 ### Fixed
+- Tesseract OCR language data is now stored in the config dir instead of the collection folder
 - `vsearch`/`hsearch` vector search no longer silently under-returns results when a `--collection`/`--after`/`--before` filter prunes most of the initial candidate set — now escalates the search window until `limit` is satisfied or all vectors are exhausted
 - `qimg get` and the MCP `get` tool no longer scan every indexed image into memory to resolve a single path lookup
 - `qimg index` now populates `ImageRow.mime` from `sharp`'s detected format instead of always writing `null`
 - `qimg embed`/`caption`/`ocr` now skip (with a clear message) rows whose collection was renamed/removed since indexing, instead of crashing mid-batch
 - The `ocr_text` schema migration no longer silently swallows unexpected `ALTER TABLE` failures (e.g. disk full, corrupt schema) — only "column already exists" is treated as expected
-
-### Changed
-- `hashFile` now streams the file instead of reading it fully into memory before hashing
 
 ## [0.3.0] - 2026-05-02
 
