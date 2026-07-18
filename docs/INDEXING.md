@@ -38,7 +38,8 @@ For each discovered file:
 This avoids re-hashing and re-parsing files that haven't changed.
 
 ### 4. Hash File
-`src/store.ts:hashFile(path)` — SHA1 of full file contents.  
+`src/store.ts:hashFile(path)` — SHA1 of file contents, computed via a streamed read
+(`Promise<string>`).  
 Used as the vector table key and for cross-collection deduplication.
 
 ### 5. EXIF Extraction
@@ -47,7 +48,6 @@ Used as the vector table key and for cross-collection deduplication.
 Returns `ExifData`:
 - `taken_at` — from `DateTimeOriginal` or `CreateDate` (Unix ms)
 - `camera` — `Make + " " + Model`
-- `lens` — `LensModel` or `Lens`
 - `gps_lat`, `gps_lon`
 - `caption` — merged from `ImageDescription`, `Caption-Abstract`, `Description`, `title`
 - `exif_text` — space-joined keywords + description fields, used for FTS indexing
@@ -55,8 +55,10 @@ Returns `ExifData`:
 Failures are silent; returns `{ exif_text: "" }` on error.
 
 ### 6. Image Dimensions
-`sharp(imagePath).metadata()` — lazy import to avoid loading sharp unless needed.  
-Extracts `width`, `height`, `mime` (format mapped to MIME type).
+`sharp(imagePath).metadata()` — import hoisted once per `qimg index` run (not
+per-file).  
+Extracts `width`, `height`, `mime` (`sharp`'s `format` mapped to a MIME type via
+`MIME_BY_SHARP_FORMAT` in `src/cli/qimg.ts`).
 
 ### 7. Sidecar Resolution
 Only runs if collection has `sidecar` config.

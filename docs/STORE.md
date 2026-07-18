@@ -34,7 +34,7 @@ CREATE TABLE images (
 )
 ```
 
-Indexes: `idx_images_hash`, `idx_images_collection`, `idx_images_taken_at`.
+Indexes: `idx_images_hash`, `idx_images_collection`, `idx_images_taken_at`, `idx_images_path`.
 
 ### `images_fts` — FTS5 virtual table
 
@@ -85,6 +85,7 @@ Opens or creates the SQLite DB, loads the sqlite-vec extension, enables WAL mode
 | Method | Returns | Notes |
 |--------|---------|-------|
 | `getByPath(collection, path)` | `ImageRow \| null` | Exact lookup |
+| `findByPath(target)` | `ImageRow \| null` | Lookup by exact path, `collection/path`, or path suffix — used by `qimg get` and the MCP `get` tool |
 | `listImages(collection?)` | `ImageRow[]` | All images, optionally filtered |
 | `listUncaptioned(collection?)` | `ImageRow[]` | WHERE caption IS NULL |
 | `listWithoutOcr(collection?)` | `ImageRow[]` | WHERE ocr_text IS NULL |
@@ -122,13 +123,17 @@ const rows = db.prepare(
 ).all(...hashes);
 ```
 
-The oversample factor (`k * 4`) compensates for post-filter collection narrowing.
+The oversample factor starts at `k * 4` and, when a `SearchFilters` is present and the
+post-filter hit count is still below `limit`, escalates (`k *= 4`, capped at the total
+vector count) and re-queries until `limit` is satisfied or all vectors have been
+scanned — this avoids silently under-returning results for narrow collections/date
+ranges.
 
 ## Utility Exports
 
 | Export | Description |
 |--------|-------------|
-| `hashFile(path)` | SHA1 of full file contents (returns hex string) |
+| `hashFile(path)` | SHA1 of file contents, streamed (`Promise<string>`, hex) |
 | `fileMtime(path)` | File modification time in milliseconds |
 | `getDefaultDbPath()` | `~/.cache/qimg/index.sqlite` (or `$QIMG_CACHE_DIR/index.sqlite`) |
 

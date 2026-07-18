@@ -95,7 +95,7 @@ SidecarConfig {           // src/sidecar.ts
 }
 
 ExifData {                // src/exif.ts
-  taken_at?, camera?, lens?, gps_lat?, gps_lon?,
+  taken_at?, camera?, gps_lat?, gps_lon?,
   caption?,
   exif_text: string       // flattened keywords + description for FTS
 }

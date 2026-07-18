@@ -29,6 +29,9 @@ FTS5 config:
 - **Tokenizer:** `porter unicode61` (stemming + Unicode normalization)
 - **Indexed columns:** `path`, `filename`, `caption`, `exif_text`, `ocr_text`
 - Scores are normalized to `[0..1]` by dividing by the top result's rank
+- **Match semantics:** each query word is quoted individually and joined with FTS5's
+  default `AND` operator (e.g. `"red" "sunset" "ocean"`) — every term must appear
+  somewhere in the row, but not adjacently or in order. This is not a phrase match.
 
 **Use case:** Keyword search over filenames, captions, EXIF keywords, and OCR-extracted text.
 

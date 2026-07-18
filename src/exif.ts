@@ -9,7 +9,6 @@ import exifr from "exifr";
 export interface ExifData {
   taken_at?: number; // unix ms
   camera?: string;
-  lens?: string;
   gps_lat?: number;
   gps_lon?: number;
   caption?: string; // ImageDescription, Caption, Description, Title, Headline from EXIF
@@ -30,7 +29,6 @@ export async function extractExif(imagePath: string): Promise<ExifData> {
     if (!data) return empty;
 
     const camera = [data.Make, data.Model].filter(Boolean).join(" ").trim() || undefined;
-    const lens = (data.LensModel as string | undefined) || (data.Lens as string | undefined);
     const taken =
       (data.DateTimeOriginal as Date | undefined) ||
       (data.CreateDate as Date | undefined);
@@ -49,7 +47,6 @@ export async function extractExif(imagePath: string): Promise<ExifData> {
     return {
       taken_at: taken instanceof Date ? taken.getTime() : undefined,
       camera,
-      lens,
       gps_lat: typeof data.latitude === "number" ? data.latitude : undefined,
       gps_lon: typeof data.longitude === "number" ? data.longitude : undefined,
       caption: captionFields.length > 0 ? captionFields.join(" ") : undefined,

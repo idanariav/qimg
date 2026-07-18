@@ -6,6 +6,8 @@ Local, offline hybrid image search — indexes images into SQLite with BM25 full
 
 When refactoring commands (renaming, adding/removing params) — review CLAUDE.md, relevant docs, and README.md to ensure no stale references remain.
 
+Known deferred work is tracked in [.claude/techdebt.md](.claude/techdebt.md) — check it for context before touching an area that might already have an open follow-up, and log new deferred items there when you intentionally punt on something.
+
 ## Commands
 
 ```sh

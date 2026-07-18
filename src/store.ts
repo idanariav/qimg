@@ -14,11 +14,10 @@
 
 import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
-import { existsSync, mkdirSync, statSync } from "fs";
+import { existsSync, mkdirSync, statSync, createReadStream } from "fs";
 import { dirname, join } from "path";
 import { homedir } from "os";
 import { createHash } from "crypto";
-import { readFileSync } from "fs";
 import { EMBED_DIM, float32ToBuffer } from "./embed.js";
 
 export interface ImageRow {
@@ -70,8 +69,14 @@ export function getDefaultDbPath(): string {
   return join(getCacheDir(), "index.sqlite");
 }
 
-export function hashFile(path: string): string {
-  return createHash("sha1").update(readFileSync(path)).digest("hex");
+export function hashFile(path: string): Promise<string> {
+  return new Promise((resolvePromise, reject) => {
+    const hash = createHash("sha1");
+    const stream = createReadStream(path);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("error", reject);
+    stream.on("end", () => resolvePromise(hash.digest("hex")));
+  });
 }
 
 export function fileMtime(path: string): number {
@@ -124,6 +129,7 @@ export class Store {
       CREATE INDEX IF NOT EXISTS idx_images_hash ON images(hash);
       CREATE INDEX IF NOT EXISTS idx_images_collection ON images(collection);
       CREATE INDEX IF NOT EXISTS idx_images_taken_at ON images(taken_at);
+      CREATE INDEX IF NOT EXISTS idx_images_path ON images(path);
     `);
 
     // sqlite-vec table — created separately to control the dimension constant
@@ -141,8 +147,11 @@ export class Store {
       // Add ocr_text to existing DBs that pre-date this column
       try {
         this.db.exec(`ALTER TABLE images ADD COLUMN ocr_text TEXT`);
-      } catch {
-        // Column already exists (fresh install path from CREATE TABLE above)
+      } catch (e) {
+        // Column already exists (fresh install path from CREATE TABLE above) —
+        // any other failure (disk full, locked file, corrupt schema) should stop
+        // the migration rather than silently proceeding to drop/rebuild FTS.
+        if (!/duplicate column name/i.test((e as Error).message)) throw e;
       }
 
       // Recreate FTS5 with ocr_text column. Drop first — FTS5 virtual tables
@@ -179,11 +188,18 @@ export class Store {
     );
 
     this.db.transaction(() => {
-      for (const row of rows) {
-        const filename = row.path.split("/").pop() ?? "";
-        stmt.run(row.id, row.path, filename, row.caption ?? "", row.exif_text ?? "", row.ocr_text ?? "");
-      }
+      for (const row of rows) this.writeFtsRow(stmt, row.id, row);
     })();
+  }
+
+  /** Shared by `reindexFts` (single row) and `rebuildAllFts` (bulk, own prepared statement). */
+  private writeFtsRow(
+    stmt: Database.Statement,
+    id: number,
+    row: { path: string; caption: string | null; exif_text: string | null; ocr_text: string | null },
+  ): void {
+    const filename = row.path.split("/").pop() ?? "";
+    stmt.run(id, row.path, filename, row.caption ?? "", row.exif_text ?? "", row.ocr_text ?? "");
   }
 
   getByPath(collection: string, path: string): ImageRow | null {
@@ -192,6 +208,24 @@ export class Store {
         `SELECT * FROM images WHERE collection = ? AND path = ?`,
       )
       .get(collection, path);
+    return row ?? null;
+  }
+
+  /**
+   * Look up a single image by exact path, "collection/path", or a path suffix
+   * (e.g. a bare filename). Matches without pulling the whole table into memory.
+   */
+  findByPath(target: string): ImageRow | null {
+    const suffix = target.replace(/[\\%_]/g, "\\$&");
+    const row = this.db
+      .prepare<[string, string, string], ImageRow>(
+        `SELECT * FROM images
+         WHERE path = ?
+            OR (collection || '/' || path) = ?
+            OR path LIKE '%/' || ? ESCAPE '\\'
+         LIMIT 1`,
+      )
+      .get(target, target, suffix);
     return row ?? null;
   }
 
@@ -231,17 +265,15 @@ export class Store {
 
   private reindexFts(id: number): void {
     const row = this.db
-      .prepare<[number], { rowid: number; path: string; caption: string | null; exif_text: string | null; ocr_text: string | null }>(
-        `SELECT id as rowid, path, caption, exif_text, ocr_text FROM images WHERE id = ?`,
+      .prepare<[number], { path: string; caption: string | null; exif_text: string | null; ocr_text: string | null }>(
+        `SELECT path, caption, exif_text, ocr_text FROM images WHERE id = ?`,
       )
       .get(id);
     if (!row) return;
-    const filename = row.path.split("/").pop() ?? "";
-    this.db
-      .prepare(
-        `REPLACE INTO images_fts (rowid, path, filename, caption, exif_text, ocr_text) VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(id, row.path, filename, row.caption ?? "", row.exif_text ?? "", row.ocr_text ?? "");
+    const stmt = this.db.prepare(
+      `REPLACE INTO images_fts (rowid, path, filename, caption, exif_text, ocr_text) VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    this.writeFtsRow(stmt, id, row);
   }
 
   deleteImage(collection: string, path: string): void {
@@ -326,11 +358,15 @@ export class Store {
 
   /**
    * BM25 over images_fts. Returns hits sorted by relevance.
+   *
+   * Each query word is quoted and joined with FTS5's default AND operator, so all
+   * terms must appear somewhere in the row (any order/position) rather than requiring
+   * an exact adjacent phrase match — better recall for natural-language queries.
    */
   searchFts(query: string, limit: number = 20, filters?: SearchFilters): SearchHit[] {
-    if (!query.trim()) return [];
-    const safe = query.replace(/"/g, '""');
-    const matchExpr = `"${safe}"`;
+    const terms = query.trim().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return [];
+    const matchExpr = terms.map((t) => `"${t.replace(/"/g, '""')}"`).join(" ");
 
     const conditions: string[] = [];
     const params: unknown[] = [matchExpr];
@@ -372,18 +408,43 @@ export class Store {
    */
   searchVec(embedding: Float32Array, limit: number = 20, filters?: SearchFilters): SearchHit[] {
     const buf = float32ToBuffer(embedding);
-    // Step 1: pure vec0 query — no joins
-    const vecRows = this.db
+    const hasFilters = !!(filters?.collection || filters?.after != null || filters?.before != null);
+    const maxK = hasFilters ? this.vectorCount() : Infinity;
+
+    let k = Math.min(limit * 4, maxK);
+    let hits: SearchHit[] = [];
+    while (k > 0) {
+      const vecRows = this.matchVectors(buf, k);
+      if (vecRows.length === 0) return [];
+      hits = this.joinVecHits(vecRows, filters);
+      // Only escalate when a filter may have pruned matches that vec0 didn't
+      // return in this batch — i.e. more candidates exist beyond k.
+      if (!hasFilters || hits.length >= limit || vecRows.length < k || k >= maxK) break;
+      k = Math.min(k * 4, maxK);
+    }
+    return hits.slice(0, limit);
+  }
+
+  private vectorCount(): number {
+    return this.db.prepare<[], { c: number }>(`SELECT COUNT(*) as c FROM image_vectors`).get()!.c;
+  }
+
+  /** Step 1: pure vec0 query — no joins. */
+  private matchVectors(buf: Buffer, k: number): Array<{ hash: string; distance: number }> {
+    return this.db
       .prepare<[Buffer, number], { hash: string; distance: number }>(
         `SELECT hash, distance FROM image_vectors
          WHERE embedding MATCH ? AND k = ?
          ORDER BY distance`,
       )
-      .all(buf, limit * 4); // overfetch to allow filter narrowing
+      .all(buf, k);
+  }
 
-    if (vecRows.length === 0) return [];
-
-    // Step 2: join via hash, apply filters
+  /** Step 2: join vec0 matches to `images` by hash, applying filters. */
+  private joinVecHits(
+    vecRows: Array<{ hash: string; distance: number }>,
+    filters?: SearchFilters,
+  ): SearchHit[] {
     const placeholders = vecRows.map(() => "?").join(",");
     const conditions: string[] = [`hash IN (${placeholders})`];
     const params: unknown[] = vecRows.map((r) => r.hash);
@@ -417,8 +478,7 @@ export class Store {
         sidecar_path: r.sidecar_path,
         score: 1 - (distByHash.get(r.hash) ?? 1),
       }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
+      .sort((a, b) => b.score - a.score);
   }
 
   /**

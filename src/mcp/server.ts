@@ -98,8 +98,7 @@ export async function startMcp(opts: McpOptions = {}): Promise<void> {
 
     if (name === "get") {
       const path = typeof args.path === "string" ? args.path : "";
-      const all = store.listImages();
-      const row = all.find((r) => r.path === path || `${r.collection}/${r.path}` === path);
+      const row = store.findByPath(path);
       return {
         content: [{ type: "text", text: row ? JSON.stringify(row, null, 2) : "not found" }],
       };

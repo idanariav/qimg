@@ -17,10 +17,10 @@
 
 import fg from "fast-glob";
 import { resolve } from "path";
+import { fileURLToPath } from "url";
 import { existsSync } from "fs";
 import {
   addCollection,
-  getCollection,
   isValidCollectionName,
   listCollections,
   removeCollection,
@@ -28,7 +28,7 @@ import {
   getConfigPath,
 } from "../collections.js";
 import { Store, hashFile, fileMtime } from "../store.js";
-import type { SearchHit, SearchFilters } from "../store.js";
+import type { SearchHit, SearchFilters, ImageRow } from "../store.js";
 import { resolveSidecar, clearSidecarCache } from "../sidecar.js";
 import { extractExif } from "../exif.js";
 import { embedText, embedImage } from "../embed.js";
@@ -78,36 +78,29 @@ function formatETA(seconds: number): string {
 // Arg parsing helpers
 // ---------------------------------------------------------------------------
 
-interface ParsedArgs {
+export interface ParsedArgs {
   positional: string[];
   flags: Record<string, string | boolean>;
 }
 
-function parseArgs(argv: string[]): ParsedArgs {
+export function parseArgs(argv: string[]): ParsedArgs {
   const positional: string[] = [];
   const flags: Record<string, string | boolean> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a.startsWith("--")) {
-      const key = a.slice(2);
-      const next = argv[i + 1];
-      if (next && !next.startsWith("--")) {
-        flags[key] = next;
-        i++;
-      } else {
-        flags[key] = true;
-      }
-    } else if (a.startsWith("-") && a.length > 1) {
-      const key = a.slice(1);
-      const next = argv[i + 1];
-      if (next && !next.startsWith("-")) {
-        flags[key] = next;
-        i++;
-      } else {
-        flags[key] = true;
-      }
-    } else {
+    const prefixLen = a.startsWith("--") ? 2 : a.startsWith("-") && a.length > 1 ? 1 : 0;
+    if (prefixLen === 0) {
       positional.push(a);
+      continue;
+    }
+    const key = a.slice(prefixLen);
+    const marker = "-".repeat(prefixLen);
+    const next = argv[i + 1];
+    if (next && !next.startsWith(marker)) {
+      flags[key] = next;
+      i++;
+    } else {
+      flags[key] = true;
     }
   }
   return { positional, flags };
@@ -129,7 +122,7 @@ function flagStr(v: unknown): string | undefined {
  * Parse a YYYY-MM-DD string into Unix ms.
  * endOfDay=true returns the last millisecond of that day (for --before).
  */
-function parseDate(v: unknown, endOfDay = false): number | undefined {
+export function parseDate(v: unknown, endOfDay = false): number | undefined {
   if (typeof v !== "string") return undefined;
   const d = new Date(v);
   if (isNaN(d.getTime())) {
@@ -140,7 +133,7 @@ function parseDate(v: unknown, endOfDay = false): number | undefined {
   return d.getTime();
 }
 
-function buildFilters(args: ParsedArgs): SearchFilters {
+export function buildFilters(args: ParsedArgs): SearchFilters {
   const filters: SearchFilters = {};
   const col = flagStr(args.flags.collection);
   if (col) filters.collection = col;
@@ -154,6 +147,80 @@ function buildFilters(args: ParsedArgs): SearchFilters {
 function combineCaption(exifCaption: string | undefined, sidecarCaption: string | undefined): string | null {
   const parts = [exifCaption, sidecarCaption].filter(Boolean);
   return parts.length > 0 ? parts.join("\n\n") : null;
+}
+
+const MIME_BY_SHARP_FORMAT: Record<string, string> = {
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+  heif: "image/heic",
+  avif: "image/avif",
+  tiff: "image/tiff",
+  svg: "image/svg+xml",
+};
+
+// ---------------------------------------------------------------------------
+// Batch job runner (shared by embed/caption/ocr)
+// ---------------------------------------------------------------------------
+
+/**
+ * Runs `fn` over `pending` rows with a shared progress bar/ETA display.
+ * Resolves each row's collection once up front (not per-row) and skips rows
+ * whose collection no longer exists instead of throwing.
+ */
+async function runBatchJob(
+  pending: ImageRow[],
+  fn: (abs: string, row: ImageRow) => Promise<void>,
+  labels: { verb: string; noun: string },
+): Promise<void> {
+  const total = pending.length;
+  const collections = new Map(listCollections().map((col) => [col.name, col]));
+  cursor.hide();
+  progress.indeterminate();
+  const t0 = Date.now();
+  let done = 0;
+  let errors = 0;
+  for (const row of pending) {
+    const col = collections.get(row.collection);
+    if (!col) {
+      errors++;
+      if (isTTY) process.stderr.write("\r\x1b[K");
+      console.error(`skipping ${row.collection}/${row.path}: collection '${row.collection}' not found`);
+    } else {
+      const abs = resolve(col.path, row.path);
+      try {
+        await fn(abs, row);
+        done++;
+      } catch (e) {
+        errors++;
+        if (isTTY) process.stderr.write("\r\x1b[K");
+        console.error(`failed: ${abs}: ${(e as Error).message}`);
+      }
+    }
+    const completed = done + errors;
+    const percent = (completed / total) * 100;
+    progress.set(percent);
+    const elapsed = (Date.now() - t0) / 1000;
+    const rate = completed / elapsed;
+    const etaSec = rate > 0 ? (total - completed) / rate : 0;
+    const bar = renderProgressBar(percent);
+    const percentStr = percent.toFixed(0).padStart(3);
+    const eta = elapsed > 2 ? formatETA(etaSec) : "...";
+    const errStr = errors > 0 ? ` ${c.yellow}${errors} err${c.reset}` : "";
+    if (isTTY) {
+      process.stderr.write(
+        `\r${c.cyan}${bar}${c.reset} ${c.bold}${percentStr}%${c.reset} ${c.dim}${completed}/${total}${c.reset}${errStr} ${c.dim}${rate.toFixed(1)}/s ETA ${eta}${c.reset}   `,
+      );
+    }
+  }
+  progress.clear();
+  cursor.show();
+  if (isTTY) process.stderr.write("\n");
+  console.log(
+    `${c.green}✓ Done!${c.reset} ${labels.verb} ${c.bold}${done}${c.reset} ${labels.noun} in ${c.bold}${formatETA((Date.now() - t0) / 1000)}${c.reset}` +
+      (errors > 0 ? ` ${c.yellow}(${errors} failed)${c.reset}` : ""),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -291,6 +358,7 @@ async function cmdIndex(args: ParsedArgs): Promise<void> {
     console.error("no collections to index");
     process.exit(1);
   }
+  const sharp = (await import("sharp")).default;
   const store = new Store();
   try {
     for (const col of cols) {
@@ -321,16 +389,16 @@ async function cmdIndex(args: ParsedArgs): Promise<void> {
           continue;
         }
 
-        const hash = hashFile(abs);
+        const hash = await hashFile(abs);
         const exif = await extractExif(abs);
         let width: number | null = null;
         let height: number | null = null;
+        let mime: string | null = null;
         try {
-          // sharp is heavy — only require when needed
-          const sharp = (await import("sharp")).default;
           const meta = await sharp(abs).metadata();
           width = meta.width ?? null;
           height = meta.height ?? null;
+          mime = meta.format ? (MIME_BY_SHARP_FORMAT[meta.format] ?? `image/${meta.format}`) : null;
         } catch {
           // ignore — image may be in unsupported format for sharp
         }
@@ -341,7 +409,7 @@ async function cmdIndex(args: ParsedArgs): Promise<void> {
           hash,
           width,
           height,
-          mime: null,
+          mime,
           taken_at: exif.taken_at ?? null,
           camera: exif.camera ?? null,
           gps_lat: exif.gps_lat ?? null,
@@ -372,52 +440,20 @@ async function cmdEmbed(args: ParsedArgs): Promise<void> {
     const allRows = store.listImages(only);
     const pending = force ? allRows : allRows.filter((r) => !store.hasVector(r.hash));
     const skipped = allRows.length - pending.length;
-    const total = pending.length;
 
-    if (total === 0) {
+    if (pending.length === 0) {
       console.log(`${c.green}✓ All ${allRows.length} images already have embeddings.${c.reset}`);
       return;
     }
 
-    console.log(`${c.dim}Embedding ${total} images (${skipped} already done)${c.reset}`);
-    cursor.hide();
-    progress.indeterminate();
-    const t0 = Date.now();
-    let done = 0;
-    let errors = 0;
-    for (const row of pending) {
-      const abs = resolve(getCollection(row.collection)!.path, row.path);
-      try {
+    console.log(`${c.dim}Embedding ${pending.length} images (${skipped} already done)${c.reset}`);
+    await runBatchJob(
+      pending,
+      async (abs, row) => {
         const v = await embedImage(abs);
         store.upsertVector(row.hash, v);
-        done++;
-      } catch (e) {
-        errors++;
-        if (isTTY) process.stderr.write("\r\x1b[K");
-        console.error(`failed: ${abs}: ${(e as Error).message}`);
-      }
-      const completed = done + errors;
-      const percent = (completed / total) * 100;
-      progress.set(percent);
-      const elapsed = (Date.now() - t0) / 1000;
-      const rate = completed / elapsed;
-      const etaSec = rate > 0 ? (total - completed) / rate : 0;
-      const bar = renderProgressBar(percent);
-      const percentStr = percent.toFixed(0).padStart(3);
-      const eta = elapsed > 2 ? formatETA(etaSec) : "...";
-      const errStr = errors > 0 ? ` ${c.yellow}${errors} err${c.reset}` : "";
-      if (isTTY) {
-        process.stderr.write(
-          `\r${c.cyan}${bar}${c.reset} ${c.bold}${percentStr}%${c.reset} ${c.dim}${completed}/${total}${c.reset}${errStr} ${c.dim}${rate.toFixed(1)}/s ETA ${eta}${c.reset}   `,
-        );
-      }
-    }
-    progress.clear();
-    cursor.show();
-    if (isTTY) process.stderr.write("\n");
-    console.log(
-      `${c.green}✓ Done!${c.reset} Embedded ${c.bold}${done}${c.reset} images in ${c.bold}${formatETA((Date.now() - t0) / 1000)}${c.reset}` +
-        (errors > 0 ? ` ${c.yellow}(${errors} failed)${c.reset}` : ""),
+      },
+      { verb: "Embedded", noun: "images" },
     );
   } finally {
     store.close();
@@ -432,53 +468,21 @@ async function cmdCaption(args: ParsedArgs): Promise<void> {
     const allRows = store.listImages(only);
     const pending = force ? allRows : store.listUncaptioned(only);
     const skipped = allRows.length - pending.length;
-    const total = pending.length;
 
-    if (total === 0) {
+    if (pending.length === 0) {
       console.log(`${c.green}✓ All ${allRows.length} images already have captions.${c.reset}`);
       return;
     }
 
-    console.log(`${c.dim}Generating captions for ${total} images (${skipped} already done)${c.reset}`);
-    cursor.hide();
-    progress.indeterminate();
-    const t0 = Date.now();
-    let done = 0;
-    let errors = 0;
+    console.log(`${c.dim}Generating captions for ${pending.length} images (${skipped} already done)${c.reset}`);
     const { generateCaption } = await import("../caption.js");
-    for (const row of pending) {
-      const abs = resolve(getCollection(row.collection)!.path, row.path);
-      try {
+    await runBatchJob(
+      pending,
+      async (abs, row) => {
         const caption = await generateCaption(abs);
         store.updateCaption(row.id, caption);
-        done++;
-      } catch (e) {
-        errors++;
-        if (isTTY) process.stderr.write("\r\x1b[K");
-        console.error(`failed: ${abs}: ${(e as Error).message}`);
-      }
-      const completed = done + errors;
-      const percent = (completed / total) * 100;
-      progress.set(percent);
-      const elapsed = (Date.now() - t0) / 1000;
-      const rate = completed / elapsed;
-      const etaSec = rate > 0 ? (total - completed) / rate : 0;
-      const bar = renderProgressBar(percent);
-      const percentStr = percent.toFixed(0).padStart(3);
-      const eta = elapsed > 2 ? formatETA(etaSec) : "...";
-      const errStr = errors > 0 ? ` ${c.yellow}${errors} err${c.reset}` : "";
-      if (isTTY) {
-        process.stderr.write(
-          `\r${c.cyan}${bar}${c.reset} ${c.bold}${percentStr}%${c.reset} ${c.dim}${completed}/${total}${c.reset}${errStr} ${c.dim}${rate.toFixed(1)}/s ETA ${eta}${c.reset}   `,
-        );
-      }
-    }
-    progress.clear();
-    cursor.show();
-    if (isTTY) process.stderr.write("\n");
-    console.log(
-      `${c.green}✓ Done!${c.reset} Generated captions for ${c.bold}${done}${c.reset} images in ${c.bold}${formatETA((Date.now() - t0) / 1000)}${c.reset}` +
-        (errors > 0 ? ` ${c.yellow}(${errors} failed)${c.reset}` : ""),
+      },
+      { verb: "Generated captions for", noun: "images" },
     );
   } finally {
     store.close();
@@ -493,58 +497,26 @@ async function cmdOcr(args: ParsedArgs): Promise<void> {
     const allRows = store.listImages(only);
     const pending = force ? allRows : store.listWithoutOcr(only);
     const skipped = allRows.length - pending.length;
-    const total = pending.length;
 
-    if (total === 0) {
+    if (pending.length === 0) {
       console.log(`${c.green}✓ All ${allRows.length} images already have OCR text.${c.reset}`);
       return;
     }
 
-    console.log(`${c.dim}Running OCR on ${total} images (${skipped} already done)${c.reset}`);
-    cursor.hide();
-    progress.indeterminate();
-    const t0 = Date.now();
-    let done = 0;
-    let errors = 0;
+    console.log(`${c.dim}Running OCR on ${pending.length} images (${skipped} already done)${c.reset}`);
     const { extractOcrText, terminateOcrWorker } = await import("../ocr.js");
     try {
-      for (const row of pending) {
-        const abs = resolve(getCollection(row.collection)!.path, row.path);
-        try {
+      await runBatchJob(
+        pending,
+        async (abs, row) => {
           const ocrText = await extractOcrText(abs);
           store.updateOcr(row.id, ocrText);
-          done++;
-        } catch (e) {
-          errors++;
-          if (isTTY) process.stderr.write("\r\x1b[K");
-          console.error(`failed: ${abs}: ${(e as Error).message}`);
-        }
-        const completed = done + errors;
-        const percent = (completed / total) * 100;
-        progress.set(percent);
-        const elapsed = (Date.now() - t0) / 1000;
-        const rate = completed / elapsed;
-        const etaSec = rate > 0 ? (total - completed) / rate : 0;
-        const bar = renderProgressBar(percent);
-        const percentStr = percent.toFixed(0).padStart(3);
-        const eta = elapsed > 2 ? formatETA(etaSec) : "...";
-        const errStr = errors > 0 ? ` ${c.yellow}${errors} err${c.reset}` : "";
-        if (isTTY) {
-          process.stderr.write(
-            `\r${c.cyan}${bar}${c.reset} ${c.bold}${percentStr}%${c.reset} ${c.dim}${completed}/${total}${c.reset}${errStr} ${c.dim}${rate.toFixed(1)}/s ETA ${eta}${c.reset}   `,
-          );
-        }
-      }
+        },
+        { verb: "OCR processed", noun: "images" },
+      );
     } finally {
       await terminateOcrWorker();
     }
-    progress.clear();
-    cursor.show();
-    if (isTTY) process.stderr.write("\n");
-    console.log(
-      `${c.green}✓ Done!${c.reset} OCR processed ${c.bold}${done}${c.reset} images in ${c.bold}${formatETA((Date.now() - t0) / 1000)}${c.reset}` +
-        (errors > 0 ? ` ${c.yellow}(${errors} failed)${c.reset}` : ""),
-    );
   } finally {
     store.close();
   }
@@ -558,11 +530,7 @@ function cmdGet(args: ParsedArgs): void {
   }
   const store = new Store();
   try {
-    // Try as a path first
-    const all = store.listImages();
-    const match = all.find(
-      (r) => r.path === target || r.path.endsWith("/" + target) || `${r.collection}/${r.path}` === target,
-    );
+    const match = store.findByPath(target);
     if (!match) {
       console.error(`not found: ${target}`);
       process.exit(1);
@@ -723,7 +691,10 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// Only run the CLI when this file is executed directly (not when imported, e.g. by tests).
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}
