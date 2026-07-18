@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- Bumped `vitest` (3.2.4 → 3.2.7) to resolve a critical arbitrary file read/execute vulnerability in the Vitest UI server ([GHSA-5xrq-8626-4rwp](https://github.com/advisories/GHSA-5xrq-8626-4rwp))
+- Bumped `tsx` (4.21.0 → 4.23.1) to pull in `esbuild` 0.28.1, resolving a low-severity arbitrary file read in esbuild's dev server on Windows ([GHSA-g7r4-m6w7-qqqr](https://github.com/advisories/GHSA-g7r4-m6w7-qqqr))
+
 ## [0.3.1] - 2026-07-18
 
 ### Changed
