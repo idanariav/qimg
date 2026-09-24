@@ -23,6 +23,10 @@ function loadTf(): Promise<TransformersModule> {
 
 export const SIGLIP_MODEL_ID = "onnx-community/siglip2-base-patch16-224-ONNX";
 export const EMBED_DIM = 768;
+// SigLIP text tower was trained with 64-token padded sequences. The ONNX
+// tokenizer_config reports model_max_length=1e30, so "max_length" padding
+// must be given an explicit length or it tries to allocate a giant array.
+export const TEXT_MAX_LENGTH = 64;
 
 let textPipePromise: Promise<any> | null = null;
 let imagePipePromise: Promise<any> | null = null;
@@ -62,7 +66,11 @@ function l2normalize(v: Float32Array): Float32Array {
 
 export async function embedText(text: string): Promise<Float32Array> {
   const { tokenizer, model } = await getTextPipe();
-  const inputs = tokenizer(text, { padding: "max_length", truncation: true });
+  const inputs = tokenizer(text, {
+    padding: "max_length",
+    truncation: true,
+    max_length: TEXT_MAX_LENGTH,
+  });
   const fn = typeof model.get_text_features === "function"
     ? (i: any) => model.get_text_features(i)
     : (i: any) => model(i);
