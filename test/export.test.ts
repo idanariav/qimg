@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { Store } from "../src/store.js";
 import { EMBED_DIM } from "../src/embed.js";
-import { exportIndex, quantize, wordList, type ExportManifest } from "../src/export.js";
+import {
+  exportIndex, quantize, readVectorBytes, wordList, writeVectorChunks, MAX_CHUNK_BYTES, type ExportManifest,
+} from "../src/export.js";
 import type { NamedCollection } from "../src/collections.js";
 
 function unit(i: number): Float32Array {
@@ -66,10 +68,11 @@ describe("exportIndex", () => {
       embed: fakeEmbed, commonWords: ["the"], readSidecar: () => "groupthink groupthink groupthink\n%%\ndrawing drawing drawing",
     });
     const m = JSON.parse(readFileSync(join(out, "manifest.json"), "utf-8")) as ExportManifest;
-    const bin = new Int8Array(readFileSync(join(out, "vectors.bin")));
+    const bin = new Int8Array(readVectorBytes(out, m)!);
 
     expect(r.skipped).toBe(1);
-    expect(m).toMatchObject({ format: "pkm-vectors", version: 1, tool: "qimg", dim: EMBED_DIM, scale: 127 });
+    expect(m).toMatchObject({ format: "pkm-vectors", version: 2, tool: "qimg", dim: EMBED_DIM, scale: 127 });
+    expect(m.files.length).toBeGreaterThan(0);
     expect(m.images.map((i) => i.path)).toEqual(["Visuals/claims/a clock.png", "Visuals/claims/no vector.png"]);
     expect(m.images[0]!.sidecar).toBe("Content/A clock.md");
     expect(m.items).toEqual([0]); // only the image with a vector gets a row
@@ -99,5 +102,30 @@ describe("exportIndex", () => {
     await expect(exportIndex(store, [], outside, { embed: fakeEmbed, commonWords: [] })).rejects.toThrow(/not inside an Obsidian vault/);
     rmSync(outside, { recursive: true, force: true });
     store.close();
+  });
+});
+
+describe("vector chunks", () => {
+  it("splits on row boundaries under the size limit and reads back identically", () => {
+    const rows = Math.ceil((MAX_CHUNK_BYTES * 2.5) / EMBED_DIM);
+    const bin = Int8Array.from({ length: rows * EMBED_DIM }, (_, i) => (i % 255) - 127);
+    const files = writeVectorChunks(vault, bin, EMBED_DIM);
+    expect(files).toHaveLength(3);
+    for (const f of files) {
+      const size = statSync(join(vault, f)).size;
+      expect(size).toBeLessThanOrEqual(MAX_CHUNK_BYTES);
+      expect(size % EMBED_DIM).toBe(0);
+    }
+    expect(Buffer.compare(readVectorBytes(vault, { files })!, Buffer.from(bin.buffer))).toBe(0);
+  });
+
+  it("removes the v1 vectors.bin and leftover chunks, and still reads v1 exports", () => {
+    const dir = join(vault, "chunks");
+    mkdirSync(dir);
+    writeFileSync(join(dir, "vectors.bin"), Buffer.from([1, 2, 3]));
+    expect([...readVectorBytes(dir, {})!]).toEqual([1, 2, 3]);
+    writeFileSync(join(dir, "vectors-7.bin"), "old");
+    expect(writeVectorChunks(dir, new Int8Array(8), 4)).toEqual(["vectors-0.bin"]);
+    expect(readdirSync(dir)).toEqual(["vectors-0.bin"]);
   });
 });

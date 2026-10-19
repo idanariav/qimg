@@ -21,25 +21,26 @@ export:
 The output directory must sit inside a vault (a `.obsidian/` folder above it). Image and sidecar
 paths are written vault-relative, and images from collections outside that vault are skipped.
 
-## Format: `pkm-vectors` v1
+## Format: `pkm-vectors` v2
 
 Same layout as `qmd export` / `qvoid export`:
 
-- `vectors.bin` is int8, row-major, 768 bytes per row: all `items` first, then all `words`.
+- `vectors-0.bin`, `vectors-1.bin`, … are int8, row-major, 768 bytes per row: all `items` first, then all `words`, split on row boundaries into files of at most 4 MiB (Obsidian Sync's Standard plan skips files over 5 MB). Concatenate the files in manifest `files` order. Format v1 (before qmd 2.6 / qvoid 0.6 / qimg 0.5) wrote one `vectors.bin` and had no `files`; readers should accept both.
 - `manifest.json`:
 
 ```jsonc
 {
-  "format": "pkm-vectors", "version": 1, "tool": "qimg",
+  "format": "pkm-vectors", "version": 2, "tool": "qimg",
   "model": "onnx-community/siglip2-base-patch16-224-ONNX", "dim": 768, "scale": 127,
   "exportedAt": "<ISO date>",
+  "files": ["vectors-0.bin", "vectors-1.bin"],
   "images": [{ "path": "Scaffolding/Visuals/claims/x.png",   // vault-relative
                "file": "x.png",                              // collection-relative, as in --json "path"
                "collection": "claims", "hash": "…", "width": 1200, "height": 800,
                "mime": "image/png", "taken_at": null,
                "caption": "…", "exif_text": null, "ocr_text": "…",
                "sidecar": "Content/Claims/X.md" }],           // vault-relative, or null
-  "items": [0, 1, …],   // vectors.bin row → index into images (images without a vector have no row)
+  "items": [0, 1, …],   // vector row → index into images (images without a vector have no row)
   "words": ["ability", "…"]
 }
 ```

@@ -1,17 +1,19 @@
 /**
- * Portable export ("pkm-vectors" v1, same layout as `qmd export` / `qvoid export`) so clients
+ * Portable export ("pkm-vectors" v2, same layout as `qmd export` / `qvoid export`) so clients
  * without qimg installed — the pkm-rag plugin on mobile — can run tsearch/vsearch/hsearch/get.
  * See docs/EXPORT.md.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "path";
 import type { NamedCollection } from "./collections.js";
 import { bufferToFloat32, embedTexts, EMBED_DIM, SIGLIP_MODEL_ID } from "./embed.js";
 import type { Store } from "./store.js";
 
 export const EXPORT_FORMAT = "pkm-vectors";
-export const EXPORT_VERSION = 1;
+export const EXPORT_VERSION = 2;
+// Each vector file stays under Obsidian Sync's 5 MB per-file limit (Standard plan).
+export const MAX_CHUNK_BYTES = 4 * 1024 * 1024;
 const SCALE = 127;
 const WORD_RE = /[a-z]{3,20}/g;
 const TEXT_WORD_MIN_COUNT = 3;
@@ -41,9 +43,33 @@ export interface ExportManifest {
   dim: number;
   scale: number;
   exportedAt: string;
+  files: string[];        // vector chunks, concatenated in this order
   images: ExportImage[];
-  items: number[];        // vectors.bin row → index into images (images without a vector have no row)
+  items: number[];        // vector row → index into images (images without a vector have no row)
   words: string[];        // rows after the items
+}
+
+/** Writes `bin` as row-aligned chunks `vectors-0.bin`, `vectors-1.bin`, … (each at most
+ *  MAX_CHUNK_BYTES) and deletes vector files of earlier exports the new set doesn't include. */
+export function writeVectorChunks(outDir: string, bin: Int8Array, dim: number): string[] {
+  const chunkBytes = Math.max(1, Math.floor(MAX_CHUNK_BYTES / dim)) * dim;
+  const files: string[] = [];
+  for (let off = 0; off < bin.length || files.length === 0; off += chunkBytes) {
+    const part = bin.subarray(off, Math.min(bin.length, off + chunkBytes));
+    const name = `vectors-${files.length}.bin`;
+    writeFileSync(join(outDir, name), Buffer.from(part.buffer, part.byteOffset, part.byteLength));
+    files.push(name);
+  }
+  for (const f of readdirSync(outDir)) {
+    if (/^vectors(-\d+)?\.bin$/.test(f) && !files.includes(f)) unlinkSync(join(outDir, f));
+  }
+  return files;
+}
+
+/** An export's vector bytes: v2's `files` chunks in order, or v1's single `vectors.bin`. */
+export function readVectorBytes(outDir: string, manifest: { files?: string[] }): Buffer | null {
+  const paths = (manifest.files ?? ["vectors.bin"]).map((f) => join(outDir, f));
+  return paths.every((p) => existsSync(p)) ? Buffer.concat(paths.map((p) => readFileSync(p))) : null;
 }
 
 export type TextEmbedder = (texts: string[]) => Promise<Float32Array[]>;
@@ -99,12 +125,12 @@ function readCommonWords(): string[] {
 function previousWordVectors(outDir: string, model: string, dim: number): Map<string, Int8Array> {
   const prev = new Map<string, Int8Array>();
   const manifestPath = join(outDir, "manifest.json");
-  const binPath = join(outDir, "vectors.bin");
-  if (!existsSync(manifestPath) || !existsSync(binPath)) return prev;
+  if (!existsSync(manifestPath)) return prev;
   try {
     const m = JSON.parse(readFileSync(manifestPath, "utf-8")) as ExportManifest;
     if (m.format !== EXPORT_FORMAT || m.model !== model || m.dim !== dim) return prev;
-    const bin = readFileSync(binPath);
+    const bin = readVectorBytes(outDir, m);
+    if (!bin) return prev;
     m.words.forEach((w, i) => {
       prev.set(w, new Int8Array(bin.buffer, bin.byteOffset + (m.items.length + i) * dim, dim));
     });
@@ -180,11 +206,11 @@ export async function exportIndex(
   const bin = new Int8Array((itemVecs.length + words.length) * EMBED_DIM);
   itemVecs.forEach((v, i) => bin.set(v, i * EMBED_DIM));
   words.forEach((w, i) => bin.set(wordVecs.get(w)!, (itemVecs.length + i) * EMBED_DIM));
+  const files = writeVectorChunks(outDir, bin, EMBED_DIM);
   const manifest: ExportManifest = {
     format: EXPORT_FORMAT, version: EXPORT_VERSION, tool: "qimg", model: SIGLIP_MODEL_ID,
-    dim: EMBED_DIM, scale: SCALE, exportedAt: new Date().toISOString(), images, items, words,
+    dim: EMBED_DIM, scale: SCALE, exportedAt: new Date().toISOString(), files, images, items, words,
   };
-  writeFileSync(join(outDir, "vectors.bin"), Buffer.from(bin.buffer));
   writeFileSync(join(outDir, "manifest.json"), JSON.stringify(manifest));
 
   return {
