@@ -27,6 +27,7 @@ qimg hsearch <query> [--image <path>] [--collection <n>] [--after YYYY-MM-DD] [-
 
 qimg get <path|#docid> [--collection <n>]
 qimg status
+qimg export [--out <dir>]                  # Portable int8 export into a vault folder (docs/EXPORT.md)
 qimg mcp                                   # Start MCP server (stdio)
 ```
 
@@ -78,3 +79,4 @@ Subsystem docs:
 | Tesseract OCR pipeline, FTS update | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | BM25, cosine, hybrid RRF search | [docs/SEARCHING.md](docs/SEARCHING.md) |
 | SQLite schema, Store class API | [docs/STORE.md](docs/STORE.md) |
+| Portable export for clients without qimg | [docs/EXPORT.md](docs/EXPORT.md) |

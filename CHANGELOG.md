@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+- **`qimg export [--out <dir>]`** — writes a portable `pkm-vectors` export (vault-relative image metadata, int8 SigLIP image vectors, a query-side word table) into a vault folder, so clients without qimg (the pkm-rag plugin on mobile) can run `tsearch`/`vsearch`/`hsearch`/`get`. Set `export.path` in `index.yml` to re-export after `index`, `embed`, `caption` and `ocr`. Lite `vsearch` matches the CLI's top-10 at 8–10/10 for single words and 5–8/10 for phrases. See `docs/EXPORT.md`
+- **`embedTexts(texts)`** — batched SigLIP text embedding (identical results to `embedText`, which now delegates to it)
+
 ### Fixed
 - `vsearch`/`hsearch` text queries (CLI and MCP) crashed with `RangeError: Invalid array length`: the SigLIP 2 tokenizer reports `model_max_length=1e30`, so `padding: "max_length"` now gets an explicit `max_length: 64`. Added a regression test (`test/embed.test.ts`)
 - Bumped `vitest` (3.2.4 → 3.2.7) to resolve a critical arbitrary file read/execute vulnerability in the Vitest UI server ([GHSA-5xrq-8626-4rwp](https://github.com/advisories/GHSA-5xrq-8626-4rwp))

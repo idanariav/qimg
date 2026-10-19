@@ -3,3 +3,4 @@ export * from "./store.js";
 export * from "./sidecar.js";
 export * from "./embed.js";
 export * from "./exif.js";
+export * from "./export.js";

@@ -65,8 +65,15 @@ function l2normalize(v: Float32Array): Float32Array {
 }
 
 export async function embedText(text: string): Promise<Float32Array> {
+  return (await embedTexts([text]))[0]!;
+}
+
+/** Embeds several texts in one forward pass (every input is padded to TEXT_MAX_LENGTH, so
+ *  results are identical to embedding each text on its own). */
+export async function embedTexts(texts: string[]): Promise<Float32Array[]> {
+  if (texts.length === 0) return [];
   const { tokenizer, model } = await getTextPipe();
-  const inputs = tokenizer(text, {
+  const inputs = tokenizer(texts, {
     padding: "max_length",
     truncation: true,
     max_length: TEXT_MAX_LENGTH,
@@ -77,7 +84,8 @@ export async function embedText(text: string): Promise<Float32Array> {
   const out = await fn(inputs);
   const embeds = out.text_embeds ?? out.pooler_output ?? out.last_hidden_state;
   if (!embeds) throw new Error(`No text embeddings in model output: ${Object.keys(out).join(",")}`);
-  return l2normalize(Float32Array.from(embeds.data));
+  const dim = embeds.data.length / texts.length;
+  return texts.map((_, i) => l2normalize(Float32Array.from(embeds.data.subarray(i * dim, (i + 1) * dim))));
 }
 
 export async function embedImage(imagePath: string): Promise<Float32Array> {

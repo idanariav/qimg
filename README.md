@@ -233,6 +233,12 @@ qimg ls claims
 qimg status
 ```
 
+**`export`** — Writes a portable int8 copy of the index (image vectors, captions, OCR text and a query-side word table) into a vault folder, so clients without qimg, such as the pkm-rag plugin on mobile, can still search. Set `export.path` in `index.yml` to re-export automatically after `index`, `embed`, `caption` and `ocr`. See [docs/EXPORT.md](docs/EXPORT.md).
+
+```sh
+qimg export --out ~/Vault/Scaffolding/Embeddings/qimg
+```
+
 ---
 
 ### MCP Server

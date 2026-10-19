@@ -11,6 +11,7 @@
   "files": [
     "bin/",
     "dist/",
+    "assets/common-words.txt",
     "LICENSE",
     "README.md",
     "CHANGELOG.md"

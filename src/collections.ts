@@ -24,6 +24,8 @@ export interface Collection {
 
 export interface CollectionConfig {
   collections: Record<string, Collection>;
+  /** Portable export (`qimg export`); when `path` is set, index/embed/caption/ocr re-export. */
+  export?: { path: string };
 }
 
 export interface NamedCollection extends Collection {

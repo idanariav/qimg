@@ -26,7 +26,9 @@ import {
   removeCollection,
   renameCollection,
   getConfigPath,
+  loadConfig,
 } from "../collections.js";
+import { exportIndex } from "../export.js";
 import { Store, hashFile, fileMtime } from "../store.js";
 import type { SearchHit, SearchFilters, ImageRow } from "../store.js";
 import { resolveSidecar, clearSidecarCache } from "../sidecar.js";
@@ -257,6 +259,7 @@ Commands:
   embed [--collection <n>] [--force]  Generate SigLIP 2 vectors (--force re-embeds all)
   caption [--collection <n>] [--force]  Generate AI captions (--force re-captions all)
   ocr [--collection <n>] [--force]  Extract text from images via OCR (--force re-runs all)
+  export [--out <dir>]       Portable int8 export into a vault folder (docs/EXPORT.md)
   get <path|#docid>
   tsearch <query> [--collection <n>] [--after YYYY-MM-DD] [--before YYYY-MM-DD] [-n <num>] [--json]
   vsearch <query> [--image <path>] [--collection <n>] [--after YYYY-MM-DD] [--before YYYY-MM-DD] [-n <num>] [--json]
@@ -629,6 +632,36 @@ function cmdStatus(): void {
   }
 }
 
+async function runExport(outDir: string): Promise<void> {
+  const store = new Store();
+  try {
+    const r = await exportIndex(store, listCollections(), outDir);
+    console.log(
+      `${c.green}✓${c.reset} Exported ${r.images} images, ${r.items} vectors, ${r.words} words ` +
+        `(${r.newlyEmbedded} newly embedded) → ${r.outDir} (${(r.bytes / 1e6).toFixed(1)} MB)` +
+        (r.skipped > 0 ? ` ${c.dim}(${r.skipped} outside the vault skipped)${c.reset}` : ""),
+    );
+  } finally {
+    store.close();
+  }
+}
+
+async function cmdExport(args: ParsedArgs): Promise<void> {
+  const outDir = flagStr(args.flags.out) ?? loadConfig().export?.path;
+  if (!outDir) {
+    console.error("No export directory: pass --out <dir> or set `export.path` in index.yml");
+    process.exitCode = 2;
+    return;
+  }
+  await runExport(resolve(outDir));
+}
+
+/** Re-export after commands that change exported data, when `export.path` is configured. */
+async function autoExport(): Promise<void> {
+  const outDir = loadConfig().export?.path;
+  if (outDir) await runExport(resolve(outDir));
+}
+
 async function cmdMcp(_args: ParsedArgs): Promise<void> {
   const { startMcp } = await import("../mcp/server.js");
   await startMcp();
@@ -656,15 +689,22 @@ async function main(): Promise<void> {
       break;
     case "index":
       await cmdIndex(args);
+      await autoExport();
       break;
     case "embed":
       await cmdEmbed(args);
+      await autoExport();
       break;
     case "caption":
       await cmdCaption(args);
+      await autoExport();
       break;
     case "ocr":
       await cmdOcr(args);
+      await autoExport();
+      break;
+    case "export":
+      await cmdExport(args);
       break;
     case "get":
       cmdGet(args);

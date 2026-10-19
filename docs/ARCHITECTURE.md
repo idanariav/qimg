@@ -8,12 +8,13 @@ qimg is a local, offline hybrid image search system. It indexes images into a SQ
 |------|---------|-------------|
 | `src/cli/qimg.ts` | CLI entry point and command dispatch | All commands |
 | `src/store.ts` | SQLite persistence, FTS, vector search, RRF | `Store`, `ImageRow`, `SearchHit`, `SearchFilters`, `hashFile`, `fileMtime` |
-| `src/embed.ts` | SigLIP 2 text/image embeddings (ONNX) | `embedText`, `embedImage`, `EMBED_DIM`, `float32ToBuffer`, `bufferToFloat32` |
+| `src/embed.ts` | SigLIP 2 text/image embeddings (ONNX) | `embedText`, `embedTexts`, `embedImage`, `EMBED_DIM`, `float32ToBuffer`, `bufferToFloat32` |
 | `src/caption.ts` | SmolVLM-256M AI captions (ONNX) | `generateCaption` |
 | `src/ocr.ts` | Tesseract.js OCR text extraction | `extractOcrText`, `terminateOcrWorker` |
 | `src/sidecar.ts` | Resolve captions from paired markdown files | `resolveSidecar`, `clearSidecarCache`, `SidecarResult` |
 | `src/exif.ts` | EXIF/IPTC/XMP metadata extraction | `extractExif`, `ExifData` |
 | `src/collections.ts` | YAML config management for collections | `Collection`, `addCollection`, `listCollections`, `loadConfig`, `saveConfig` |
+| `src/export.ts` | Portable int8 export into a vault folder ([EXPORT.md](EXPORT.md)) | `exportIndex`, `ExportManifest` |
 | `src/mcp/server.ts` | MCP server (stdio) — thin wrapper over Store | `startMcp` |
 | `src/index.ts` | Public API barrel export | re-exports all modules |
 
