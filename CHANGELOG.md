@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-19
+
 ### Added
 - **`qimg export [--out <dir>]`** — writes a portable `pkm-vectors` export (vault-relative image metadata, int8 SigLIP image vectors, a query-side word table) into a vault folder, so clients without qimg (the pkm-rag plugin on mobile) can run `tsearch`/`vsearch`/`hsearch`/`get`. Set `export.path` in `index.yml` to re-export after `index`, `embed`, `caption` and `ocr`. Lite `vsearch` matches the CLI's top-10 at 8–10/10 for single words and 5–8/10 for phrases. See `docs/EXPORT.md`
 - **`embedTexts(texts)`** — batched SigLIP text embedding (identical results to `embedText`, which now delegates to it)
